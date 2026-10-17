@@ -92,9 +92,9 @@ export async function equip(db:D1Database,p:GamePlayer,id:number):Promise<string
   const out=await db.batch([
     db.prepare("UPDATE players SET version=version+1 WHERE id=? AND version=?")
       .bind(p.id,p.version),
-    db.prepare("UPDATE equipment SET equipped=0 WHERE player_id=? AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
+    db.prepare("UPDATE equipment SET equipped=0 WHERE player_id=? AND changes()=1 AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
       .bind(p.id,p.id,p.version+1),
-    db.prepare("UPDATE equipment SET equipped=1 WHERE id=? AND player_id=? AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
+    db.prepare("UPDATE equipment SET equipped=1 WHERE id=? AND player_id=? AND changes()>0 AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
       .bind(id,p.id,p.id,p.version+1)
   ]);
   if(out[0].meta.changes!==1||out[2].meta.changes!==1)
@@ -110,7 +110,7 @@ export async function sell(db:D1Database,p:GamePlayer,id:number):Promise<string>
   const out=await db.batch([
     db.prepare("UPDATE players SET gold=gold+?,version=version+1 WHERE id=? AND version=?")
       .bind(price,p.id,p.version),
-    db.prepare("DELETE FROM equipment WHERE id=? AND player_id=? AND equipped=0 AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
+    db.prepare("DELETE FROM equipment WHERE id=? AND player_id=? AND equipped=0 AND changes()=1 AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
       .bind(id,p.id,p.id,p.version+1)
   ]);
   if(out[0].meta.changes!==1||out[1].meta.changes!==1)
@@ -127,9 +127,9 @@ export async function enhance(db:D1Database,p:GamePlayer):Promise<string> {
   const level=event==="success"?e.upgrade_level+1:event==="down"?Math.max(0,e.upgrade_level-1):e.upgrade_level;
   const nextPower=power(e.rarity,level);
   const statement=event==="destroy"
-    ? db.prepare("DELETE FROM equipment WHERE id=? AND player_id=? AND equipped=1 AND upgrade_level=? AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
+    ? db.prepare("DELETE FROM equipment WHERE id=? AND player_id=? AND equipped=1 AND upgrade_level=? AND changes()=1 AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
       .bind(e.id,p.id,e.upgrade_level,p.id,p.version+1)
-    : db.prepare("UPDATE equipment SET upgrade_level=?,attack_bonus=? WHERE id=? AND player_id=? AND equipped=1 AND upgrade_level=? AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
+    : db.prepare("UPDATE equipment SET upgrade_level=?,attack_bonus=? WHERE id=? AND player_id=? AND equipped=1 AND upgrade_level=? AND changes()=1 AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)")
       .bind(level,nextPower,e.id,p.id,e.upgrade_level,p.id,p.version+1);
   const out=await db.batch([
     db.prepare("UPDATE players SET gold=gold-?,version=version+1 WHERE id=? AND version=? AND gold>=?")
