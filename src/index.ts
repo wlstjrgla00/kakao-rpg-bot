@@ -151,7 +151,9 @@ const MONSTERS = ["🟢 슬라임", "👺 숲 고블린", "🐺 야생 늑대", 
 function makeMonster(stage:number,playerLevel:number,ground=currentGround({level:playerLevel,hunting_ground:"auto"} as Player)):Monster {
   // Stage is retained only as a lifetime clear counter, never a combat scale.
   const level=targetMonsterLevel(playerLevel,ground);
-  const hp=Math.ceil(28+level*6.2);
+  // Longer fights at equal levels (roughly 4-6 rounds for ordinary builds).
+  // Lifetime stage no longer affects monster HP.
+  const hp=Math.ceil(55+level*12.5);
   return {name:MONSTERS[ground.monsterIndex],level,hp,maxHp:hp};
 }
 function currentMonster(p:Player):Monster|null {
@@ -170,10 +172,13 @@ async function spawnMonster(db:D1Database,p:Player):Promise<Player> {
   if(!hasGroundSchema(p))return p;
   const expected=makeMonster(p.stage,p.level,currentGround(p));
   const existing=currentMonster(p);
-  // Keep wounded foes after defeat. Old stage-scaled or wrong-zone enemies
-  // are automatically replaced once after migration with fair leveled mobs.
+  // Preserve remaining HP for an in-progress, balanced encounter. Replace
+  // old underpowered (or legacy overpowered) monsters once, even if the name
+  // and level still match. Compare MAX HP, never remaining HP, so that damage
+  // already dealt to properly scaled monsters is retained after player defeat.
   if(existing && existing.name===expected.name &&
      Math.abs(existing.level-expected.level)<=2 &&
+     existing.maxHp>=Math.floor(expected.maxHp*0.75) &&
      existing.maxHp<=Math.ceil(expected.maxHp*1.25))return p;
   const result=await db.prepare(
     "UPDATE players SET monster_name=?,monster_level=?,monster_hp=?,monster_max_hp=?,"+
