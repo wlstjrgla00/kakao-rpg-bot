@@ -88,10 +88,28 @@ export default {
     if (!env.KAKAO_SKILL_KEY || request.headers.get("x-api-key") !== env.KAKAO_SKILL_KEY)
       return new Response("Forbidden",{status:403});
     let data: KakaoPayload;
-    try { data = await request.json() as KakaoPayload; } catch { return new Response("Invalid JSON",{status:400}); }
-    const botId=data.bot?.id, userKey=data.userRequest?.user?.id, command=data.userRequest?.utterance?.trim();
-    if (!botId || botId!==env.EXPECTED_BOT_ID || !userKey || userKey.length>300 || !command || command.length>100)
-      return new Response("Invalid request",{status:400});
+    try {
+      data = await request.json() as KakaoPayload;
+    } catch {
+      console.warn("Kakao skill payload validation failed", { reason: "INVALID_JSON" });
+      return response("⚠️ 요청 데이터 형식을 읽을 수 없습니다. [INVALID_JSON]", ["게임시작"]);
+    }
+    const botId = data?.bot?.id;
+    const userKey = data?.userRequest?.user?.id;
+    const command = data?.userRequest?.utterance?.trim();
+    const rejectReason =
+      !botId ? "BOT_ID_MISSING" :
+      botId !== env.EXPECTED_BOT_ID ? "BOT_ID_MISMATCH" :
+      !userKey ? "USER_ID_MISSING" :
+      typeof userKey !== "string" ? "USER_ID_INVALID" :
+      userKey.length > 300 ? "USER_ID_TOO_LONG" :
+      !command ? "UTTERANCE_MISSING" :
+      command.length > 100 ? "UTTERANCE_TOO_LONG" : null;
+    if (rejectReason) {
+      // Only log the validation reason, never the user identifier or secret.
+      console.warn("Kakao skill payload validation failed", { reason: rejectReason });
+      return response(`⚠️ RPG 요청 확인 필요 [${rejectReason}]\n관리자에게 이 오류 코드를 전달해 주세요.`, ["게임시작"]);
+    }
     try { return await handle(command,env,botId,userKey); }
     catch (e) { console.error("Game handler failed",e); return response("서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."); }
   }
