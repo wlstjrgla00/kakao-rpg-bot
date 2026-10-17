@@ -46,7 +46,7 @@ function monsterCard(monster: MonsterCard) {
       },
       buttonLayout: "horizontal",
       buttons: [
-        { label: "휴식", action: "message", messageText: "휴식" },
+        { label: "회복", action: "message", messageText: "회복" },
         // Reuse existing '사냥' block; no extra '탐험' block required.
         { label: "탐험", action: "message", messageText: "사냥" }
       ]
