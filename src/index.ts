@@ -476,14 +476,48 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
        {label:"장비",messageText:"장비"},
        {label:"인벤토리",messageText:"인벤토리"}]);
   }
+  if(command==="판매 취소")
+    return jobCard("💰 판매 취소","장비는 판매되지 않았습니다.",
+      [{label:"판매 메뉴",messageText:"판매 메뉴"},
+       {label:"인벤토리",messageText:"인벤토리"}]);
+  const saleConfirm=command.match(/^판매 확정\s+(\d+)$/);
+  if(saleConfirm) {
+    const id=Number(saleConfirm[1]);
+    if(!Number.isSafeInteger(id)||id<1)
+      return response("⚠️ 장비 번호가 올바르지 않습니다.",["판매 메뉴"]);
+    const result=await sell(db,p,id);
+    return jobCard("💰 장비 판매 결과",result,
+      [{label:"판매 메뉴",messageText:"판매 메뉴"},
+       {label:"장착 메뉴",messageText:"장착 메뉴"},
+       {label:"인벤토리",messageText:"인벤토리"}],
+      ["장비","사냥"]);
+  }
   const gearAction=command.match(/^(장착|판매)\s+(\d+)$/);
   if(gearAction) {
     const id=Number(gearAction[2]);
-    if(!Number.isSafeInteger(id)||id<1)return response("⚠️ 장비 번호가 올바르지 않습니다.",["인벤토리"]);
-    const result=gearAction[1]==="장착"?await equip(db,p,id):await sell(db,p,id);
-    return jobCard(gearAction[1]==="장착"?"🛡️ 장비 변경":"💰 장비 판매",result,
-      [{label:"인벤토리",messageText:"인벤토리"},
-       {label:"장비",messageText:"장비"},{label:"강화",messageText:"강화"}]);
+    if(!Number.isSafeInteger(id)||id<1)
+      return response("⚠️ 장비 번호가 올바르지 않습니다.",["인벤토리"]);
+    if(gearAction[1]==="판매") {
+      const item=await db.prepare("SELECT * FROM equipment WHERE id=? AND player_id=?")
+        .bind(id,p.id).first<Equipment>();
+      if(!item)return response("⚠️ 해당 장비가 인벤토리에 없어요.",["판매 메뉴"]);
+      if(item.equipped)return response(
+        "⚠️ 착용 중인 장비는 판매할 수 없어요. 다른 장비를 장착해 주세요.",
+        ["장착 메뉴","판매 메뉴"]);
+      return jobCard("💰 장비 판매 확인",
+        "판매할 장비\n"+display(item)+"\n\n💰 판매 가격: "+
+        saleValue(item).toLocaleString()+"G\n\n⚠️ 판매한 장비는 복구할 수 없습니다.",
+        [{label:"판매 확정",messageText:"판매 확정 "+id},
+         {label:"취소",messageText:"판매 취소"},
+         {label:"판매 메뉴",messageText:"판매 메뉴"}],
+        ["인벤토리"]);
+    }
+    const result=await equip(db,p,id);
+    return jobCard("🛡️ 장비 장착 결과",result,
+      [{label:"장착 메뉴",messageText:"장착 메뉴"},
+       {label:"판매 메뉴",messageText:"판매 메뉴"},
+       {label:"인벤토리",messageText:"인벤토리"}],
+      ["장비","강화"]);
   }
   if (command === "내정보") return response(info(p)+"\n"+await equipmentInfo(db,p));
   if (command === "사냥터") {
