@@ -46,8 +46,9 @@ export function resolveFight(
     if (crit) criticalHits++;
     dealt += inflicted;
     monsterHp -= inflicted;
+    const attackLog = "⚔️ " + round + "턴: +" + inflicted + " 피해" + (crit ? " 💥" : "");
     if (monsterHp === 0) {
-      logs.push("⚔️ " + round + "턴: " + inflicted + " 피해 · 몬스터 처치!");
+      logs.push(attackLog + " → 몬스터 처치!");
       break;
     }
     const dodge = random() * 100 < dodgeChance(p);
@@ -62,18 +63,18 @@ export function resolveFight(
       heroHp -= received;
       taken += received;
     }
-    if (round <= 3) {
-      logs.push("⚔️ " + round + "턴: +" + inflicted + " 피해" + (crit ? " 💥" : "") +
-        " / 반격 " + (dodge ? "회피" : received + " 피해"));
-    }
+    const roundLog = attackLog + " / 반격 " + (dodge ? "회피" : received + " 피해");
     if (heroHp === 0) {
-      logs.push("💀 " + round + "턴: 전투 불능");
+      logs.push(roundLog + " → 전투 불능");
       break;
     }
     if (round === 1000) {
       heroHp = 0;
-      logs.push("💀 장기전으로 탈진하여 패배했습니다.");
+      logs.push(roundLog + " → 장기전 탈진");
+      break;
     }
+    // Keep the opening three turns; the final turn is always appended above.
+    if (round <= 3) logs.push(roundLog);
   }
   return {
     victory: monsterHp === 0 && heroHp > 0,
