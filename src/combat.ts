@@ -26,7 +26,8 @@ export type RandomGenerator = () => number;
 export function resolveFight(
   p: GamePlayer & { player_hp: number },
   monster: Monster,
-  random: RandomGenerator = Math.random
+  random: RandomGenerator = Math.random,
+  equipmentAttack = 0
 ): BattleResult {
   let monsterHp = Math.max(1, Math.min(Math.max(1, monster.maxHp), Math.floor(monster.hp)));
   let heroHp = Math.max(1, Math.floor(p.player_hp));
@@ -40,8 +41,8 @@ export function resolveFight(
     const bonus = Math.floor(random() * 7) - 3;
     const crit = random() * 100 < critChance(p);
     if (crit) criticalHits++;
-    const raw = Math.max(1, attackPower(p) + bonus);
-    const magic = Math.max(1, attackPower(p) + Math.max(0, jobInt(p) - 5) * 4);
+    const raw = Math.max(1, attackPower(p) + bonus + equipmentAttack);
+    const magic = Math.max(1, attackPower(p) + equipmentAttack + Math.max(0, jobInt(p) - 5) * 4);
     let attack = crit ? Math.floor(raw * (kind === "rogue" && tier >= 2 ? 2 : 1.5)) : raw;
     const skills: string[] = [];
     if (kind === "mage") {
