@@ -110,7 +110,7 @@ export default {
       console.warn("Kakao skill payload validation failed", { reason: rejectReason });
       return response(`⚠️ RPG 요청 확인 필요 [${rejectReason}]\n관리자에게 이 오류 코드를 전달해 주세요.`, ["게임시작"]);
     }
-    try { return await handle(command,env,botId,userKey); }
+    try { return await handle(command!,env,botId!,userKey!); }
     catch (e) { console.error("Game handler failed",e); return response("서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."); }
   }
 };
