@@ -264,6 +264,59 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
   const existing = await load(db, botId, userKey);
   if (!existing) return response("먼저 '게임시작'을 입력해서 캐릭터를 생성해 주세요.",["게임시작"]);
   const p = await hydrateHp(db, await hydrateStamina(db, existing));
+  if (command === "전직 취소") {
+    return response("전직이 취소됐어요. 스탯과 직업은 변경되지 않았습니다.", ["전직","사냥","내정보"]);
+  }
+  if (command === "전직") {
+    if (!hasJobSchema(p) || !hasHpSchema(p)) {
+      return response("⚠️ 전직 기능 준비 중입니다. Cloudflare D1에 0005 전직 SQL을 적용해 주세요.", ["내정보"]);
+    }
+    const next = nextPromotion(p);
+    if (!next) return response("👑 3차 전직까지 모두 완료했어요!\\n현재 직업: " + jobName(p));
+    if (p.level < next.level) return response(
+      "🔒 " + next.tier + "차 전직은 Lv." + next.level + "부터 가능합니다.\\n현재 Lv." + p.level,
+      ["사냥","내정보","스탯"]);
+    if (next.tier === 1) return jobCard(
+      "🎓 1차 전직 가능! · Lv.20",
+      "전사·도적·마법사 중 직업을 선택해 주세요.\\n⚠️ 전직 확정 시 기존 투자 스탯을 초기화하고 포인트를 전액 돌려줍니다.",
+      ["전사","도적","마법사"].map(name=>({label:name,messageText:name+" 선택"}))
+    );
+    const kind = jobClass(p);
+    if (kind === "adventurer") return response("직업 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.");
+    return jobCard("🎓 " + next.tier + "차 전직 가능! · Lv." + next.level,
+      promotionPreview(p, kind), [
+        {label:"전직 확정",messageText:"전직 확정"},
+        {label:"취소",messageText:"전직 취소"}
+      ]);
+  }
+  const picked = ({
+    "전사 선택":"warrior","도적 선택":"rogue","마법사 선택":"mage"
+  } as Record<string,BaseClass>)[command];
+  if (picked) {
+    const next = nextPromotion(p);
+    if (!next || next.tier !== 1 || p.level < 20) {
+      return response("1차 전직 직업은 Lv.20 이상인 모험가만 선택할 수 있어요.", ["전직"]);
+    }
+    return jobCard("🎓 " + (picked==="warrior"?"전사":picked==="rogue"?"도적":"마법사") + " 전직 확인",
+      promotionPreview(p,picked),[
+        {label:"전직 확정",messageText:command.replace(" 선택"," 전직 확정")},
+        {label:"취소",messageText:"전직 취소"}
+      ]);
+  }
+  const firstCommit = ({
+    "전사 전직 확정":"warrior","도적 전직 확정":"rogue","마법사 전직 확정":"mage"
+  } as Record<string,BaseClass>)[command];
+  if (firstCommit || command === "전직 확정") {
+    const next = nextPromotion(p);
+    if (!next) return response("✅ 모든 전직을 완료했습니다.", ["내정보","사냥"]);
+    if ((firstCommit && next.tier !== 1) || (!firstCommit && next.tier === 1)) {
+      return response("⚠️ 현재 전직 단계에 맞지 않는 요청입니다. '전직'에서 다시 선택해 주세요.", ["전직"]);
+    }
+    const chosen = firstCommit || jobClass(p);
+    if (chosen === "adventurer") return response("⚠️ 전직할 직업을 먼저 선택해 주세요.", ["전직"]);
+    const result = await promote(db,p,chosen);
+    return response(result.message,result.ok?["스탯","지능 올리기","힘 올리기","내정보"]:["전직","내정보"]);
+  }
   if (command === "내정보") return response(info(p));
   if (command === "사냥터") {
     if (!hasMonsterSchema(p)) {
