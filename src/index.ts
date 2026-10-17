@@ -2,6 +2,7 @@ import {
   type GamePlayer, hydrateStamina, hasDailySchema, hasMonsterSchema, staminaText,
   attendanceInfo, claimAttendance, staminaCap
 } from "./features";
+import { hasHpSchema, maxHp, attackPower, critChance, dodgeChance, defenseReduction, hpText, statText, hydrateHp } from "./stats";
 
 interface Env {
   DB: D1Database;
@@ -36,7 +37,7 @@ async function load(db: D1Database, botId: string, userKey: string) {
     .bind(botId, userKey).first<Player>();
 }
 function info(p: Player) {
-  return `🛡️ ${p.nickname}\n레벨 ${p.level} | 경험치 ${p.exp}/${expNeeded(p.level)}\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}`;
+  return `🛡️ ${p.nickname}\n레벨 ${p.level} | 경험치 ${p.exp}/${expNeeded(p.level)}\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}`;
 }
 type Monster = { name: string; level: number; hp: number; maxHp: number };
 
@@ -73,38 +74,57 @@ async function spawnMonster(db: D1Database, p: Player): Promise<Player> {
 }
 async function monsterBattle(db: D1Database, p: Player, nowMs: number): Promise<string> {
   const mob = currentMonster(p) || makeMonster(p.stage, p.level);
-  const critical = Math.random() < 0.12;
-  const baseDamage = Math.max(1, p.strength * 3 + p.level * 2 + Math.floor(Math.random() * 7) - 3);
+  const critical = Math.random() * 100 < critChance(p);
+  const baseDamage = Math.max(1, attackPower(p) + Math.floor(Math.random() * 7) - 3);
   const rawDamage = critical ? Math.floor(baseDamage * 1.5) : baseDamage;
   const damage = Math.min(mob.hp, rawDamage);
   const remainingHp = Math.max(0, mob.hp - damage);
   const killed = remainingHp === 0;
+
+  // Enemies counterattack only if they survive; defense reduces received damage
+  // and agility provides a chance to dodge completely.
+  const countered = !killed && Math.random() < 0.55;
+  const dodged = countered && Math.random() * 100 < dodgeChance(p);
+  const incoming = countered && !dodged && hasHpSchema(p)
+    ? Math.max(0, 4 + Math.ceil(mob.level * 1.6) - defenseReduction(p))
+    : 0;
+  const hasHealth = hasHpSchema(p);
+  const newHealth = hasHealth ? Math.max(0, p.player_hp - incoming) : 0;
+  const nextHealthAt = incoming > 0 ? nowMs : (p.hp_updated_at || nowMs);
+
   const gold = killed ? 20 + p.stage * 5 : 0;
   const exp = killed ? 30 + p.stage * 6 : 0;
   const progress = calcProgress(p, exp);
   const nextStage = p.stage + (killed ? 1 : 0);
-  const nextMob = killed ?
-    makeMonster(nextStage, progress.level) :
-    { ...mob, hp: remainingHp };
+  const nextMob = killed ? makeMonster(nextStage, progress.level) : {...mob, hp: remainingHp};
   const updatedStamp = p.stamina >= staminaCap(p) ? nowMs : (p.stamina_updated_at || nowMs);
-  // Atomic damage, enemy HP, rewards and player stamina update.
+  const hpClause = hasHealth ? ",player_hp=?,hp_updated_at=?" : "";
+  const hpBindings = hasHealth ? [newHealth,nextHealthAt] : [];
+
   const result = await db.prepare(
-    "UPDATE players SET stamina=stamina-1, gold=gold+?,level=?,exp=?," +
+    "UPDATE players SET stamina=stamina-1,gold=gold+?,level=?,exp=?," +
     "stat_points=stat_points+?,stage=?,monster_name=?,monster_level=?," +
-    "monster_hp=?,monster_max_hp=?,stamina_updated_at=?," +
-    "last_hunt_at=?,version=version+1 WHERE id=? AND version=? AND " +
+    "monster_hp=?,monster_max_hp=?,stamina_updated_at=?" + hpClause +
+    ",last_hunt_at=?,version=version+1 WHERE id=? AND version=? AND " +
     "stamina>=1 AND last_hunt_at<=?"
   ).bind(
-    gold, progress.level, progress.exp, progress.points, nextStage,
-    nextMob.name, nextMob.level, nextMob.hp, nextMob.maxHp,
-    updatedStamp, nowMs, p.id, p.version, nowMs - 1000
+    gold,progress.level,progress.exp,progress.points,nextStage,
+    nextMob.name,nextMob.level,nextMob.hp,nextMob.maxHp,
+    updatedStamp,...hpBindings,nowMs,p.id,p.version,nowMs-1000
   ).run();
   if (result.meta.changes !== 1) {
     return "⏳ 전투 상황이 갱신됐어요. 잠시 후 다시 사냥하세요.";
   }
   const after: Player = {
-    ...p, stamina: p.stamina - 1, stamina_updated_at: updatedStamp
+    ...p, stamina:p.stamina-1,stamina_updated_at:updatedStamp,
+    player_hp:hasHealth ? newHealth : p.player_hp,
+    hp_updated_at:hasHealth ? nextHealthAt : p.hp_updated_at,
+    level:progress.level
   };
+  const enemyMessage = countered
+    ? (dodged ? "💨 몬스터 반격 회피 성공!" :
+       "🛡️ 몬스터 반격 피해: " + incoming + " (방어력 적용)")
+    : (!killed ? "🛡️ 몬스터의 반격 없음" : "");
   const resultText = killed
     ? "🏆 몬스터 처치!\n💰 골드 +" + gold + "G | ✨ 경험치 +" + exp +
       (progress.points ? "\n🎉 레벨업! Lv." + progress.level +
@@ -114,7 +134,8 @@ async function monsterBattle(db: D1Database, p: Player, nowMs: number): Promise<
   return "⚔️ 전투 결과 · 스테이지 " + p.stage + "\n" +
     "👹 " + mob.name + " Lv." + mob.level + " (HP " + mob.maxHp + ")\n" +
     "🗡️ 내가 준 피해: " + damage + (critical ? " 💥 치명타!" : "") +
-    "\n" + resultText + "\n" + staminaText(after);
+    "\n" + resultText + (enemyMessage ? "\n" + enemyMessage : "") +
+    "\n" + (hasHealth ? hpText(after) + "\n" : "") + staminaText(after);
 }
 
 async function handle(command: string, env: Env, botId: string, userKey: string) {
@@ -122,12 +143,12 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
   if (command === "게임시작") {
     await db.prepare("INSERT OR IGNORE INTO players(bot_id,bot_user_key) VALUES (?,?)").bind(botId,userKey).run();
     const player = await load(db, botId, userKey);
-    const refreshed = player ? await hydrateStamina(db, player) : null;
+    const refreshed = player ? await hydrateHp(db, await hydrateStamina(db, player)) : null;
     return response(`🎮 카카오 RPG에 오신 것을 환영합니다!\n\n${info(refreshed!)}`);
   }
   const existing = await load(db, botId, userKey);
   if (!existing) return response("먼저 '게임시작'을 입력해서 캐릭터를 생성해 주세요.",["게임시작"]);
-  const p = await hydrateStamina(db, existing);
+  const p = await hydrateHp(db, await hydrateStamina(db, existing));
   if (command === "내정보") return response(info(p));
   if (command === "사냥터") {
     if (!hasMonsterSchema(p)) {
@@ -146,14 +167,35 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     return response(message, ["출석현황","사냥","내정보"]);
   }
   if (command === "휴식") return response("🌿 휴식 중에도 스태미나는 자동으로 회복돼요.\n" +
-    staminaText(p) + "\n최대 20, 10분당 1 회복", ["사냥","출석","내정보"]);
+    staminaText(p) + "\n" + hpText(p) + "\n스태미나는 10분마다 1, HP는 5분마다 10 회복", ["사냥","출석","내정보"]);
   if (command === "도움말") return response(`🎮 사용 가능한 명령어\n${actions.join(" / ")}\n\n사냥에는 스태미나 1이 필요합니다. 연속 실행에는 1초 제한이 있습니다. 스태미나는 10분마다 1씩 자동 회복합니다. 출석은 한국시간 매일 1회 가능합니다.`);
-  if (command === "스탯") return response(`✨ 남은 포인트: ${p.stat_points}\n힘 ${p.strength} / 방어 ${p.defense} / 민첩 ${p.agility}\n레벨업마다 1포인트 획득합니다.`,["힘 올리기","방어 올리기","민첩 올리기","내정보"]);
+  if (command === "스탯") return response(
+    statText(p), ["힘 올리기","방어 올리기","민첩 올리기","내정보"]
+  );
   if (["힘 올리기", "방어 올리기", "민첩 올리기"].includes(command)) {
-    const column = ({"힘 올리기":"strength","방어 올리기":"defense","민첩 올리기":"agility"} as const)[command as "힘 올리기" | "방어 올리기" | "민첩 올리기"];
-    const result = await db.prepare(`UPDATE players SET ${column}=${column}+1, stat_points=stat_points-1,version=version+1 WHERE id=? AND stat_points>0`).bind(p.id).run();
-    if (result.meta.changes !== 1) return response("사용할 스탯 포인트가 없습니다.",["스탯","사냥"]);
-    return response(`✅ ${command} 성공!\n${info((await load(db,botId,userKey))!)}`,["스탯","사냥"]);
+    const column = ({
+      "힘 올리기":"strength",
+      "방어 올리기":"defense",
+      "민첩 올리기":"agility"
+    } as const)[command as "힘 올리기" | "방어 올리기" | "민첩 올리기"];
+    if (p.stat_points <= 0) return response(
+      "✨ 남은 스탯 포인트가 없어요. 사냥으로 레벨업해 주세요.\n" + statText(p),
+      ["스탯","사냥"]
+    );
+    // +8 HP on defense allocation if the optional HP migration was installed.
+    const heal = column === "defense" && hasHpSchema(p);
+    const sql = "UPDATE players SET " + column + "=" + column + "+1," +
+      "stat_points=stat_points-1,version=version+1" +
+      (heal ? ",player_hp=player_hp+8" : "") +
+      " WHERE id=? AND version=? AND stat_points>0";
+    const result = await db.prepare(sql).bind(p.id,p.version).run();
+    if (result.meta.changes !== 1) return response(
+      "⏳ 포인트 상태가 바뀌었어요. 스탯을 다시 확인해 주세요.", ["스탯"]
+    );
+    const fresh = await load(db,botId,userKey);
+    return response("✅ " + command + " 성공! (포인트 -1)\n\n" + statText(fresh!),
+      ["힘 올리기","방어 올리기","민첩 올리기","사냥","내정보"]
+    );
   }
   if (command === "사냥" || command === "탐험") {
     const nowMs = Date.now();
@@ -170,7 +212,12 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       ["사냥","휴식","내정보"]
     );
     if (hasMonsterSchema(p)) {
-      return response(await monsterBattle(db, p, nowMs), ["사냥","사냥터","내정보","출석","휴식"]);
+      if (hasHpSchema(p) && p.player_hp <= 0) return response(
+        "💔 체력이 부족해서 사냥할 수 없어요.\n" + hpText(p) +
+        "\n휴식 후 다시 도전해 주세요.", ["휴식","내정보","스탯"]
+      );
+      return response(await monsterBattle(db, p, nowMs),
+        ["사냥","사냥터","내정보","스탯","휴식"]);
     }
     // Fallback until migration 0003 is applied: keep the old hunting engine playable.
     const atk = p.strength * 3 + p.level * 2;
