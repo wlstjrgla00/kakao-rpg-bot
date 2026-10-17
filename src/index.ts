@@ -74,7 +74,7 @@ function healCard(title: string, description: string) {
     version: "2.0",
     template: {
       outputs: [{
-        basicCard: {
+        textCard: {
           title,
           description,
           buttonLayout: "horizontal",
