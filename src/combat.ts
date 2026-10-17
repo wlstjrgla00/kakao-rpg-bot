@@ -27,7 +27,7 @@ export function resolveFight(
   p: GamePlayer & { player_hp: number },
   monster: Monster,
   random: RandomGenerator = Math.random,
-  equipmentAttack = 0
+  equipment: {attack:number;guard:number;crit:number} = {attack:0,guard:0,crit:0}
 ): BattleResult {
   let monsterHp = Math.max(1, Math.min(Math.max(1, monster.maxHp), Math.floor(monster.hp)));
   let heroHp = Math.max(1, Math.floor(p.player_hp));
@@ -39,10 +39,10 @@ export function resolveFight(
   for (let round = 1; round <= 1000; round++) {
     rounds = round;
     const bonus = Math.floor(random() * 7) - 3;
-    const crit = random() * 100 < critChance(p);
+    const crit = random() * 100 < Math.min(60,critChance(p)+equipment.crit);
     if (crit) criticalHits++;
-    const raw = Math.max(1, attackPower(p) + bonus + equipmentAttack);
-    const magic = Math.max(1, attackPower(p) + equipmentAttack + Math.max(0, jobInt(p) - 5) * 4);
+    const raw = Math.max(1, attackPower(p) + bonus + equipment.attack);
+    const magic = Math.max(1, attackPower(p) + equipment.attack + Math.max(0, jobInt(p) - 5) * 4);
     let attack = crit ? Math.floor(raw * (kind === "rogue" && tier >= 2 ? 2 : 1.5)) : raw;
     const skills: string[] = [];
     if (kind === "mage") {
@@ -74,7 +74,7 @@ export function resolveFight(
     if (dodged) {
       dodges++;
     } else {
-      const base = Math.max(0, Math.ceil(6 + monster.level * 1.6) - defenseReduction(p));
+      const base = Math.max(0, Math.ceil(6 + monster.level * 1.6) - defenseReduction(p) - equipment.guard);
       received = kind === "warrior" && tier >= 1 ? Math.ceil(base * 0.9) : base;
       received = Math.min(heroHp, received);
       heroHp -= received;
