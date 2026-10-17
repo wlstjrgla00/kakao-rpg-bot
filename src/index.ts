@@ -17,25 +17,55 @@ type KakaoPayload = {
   userRequest?: { user?: { id?: string }, utterance?: string };
 };
 const actions = ["게임시작", "내정보", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "랭킹", "도움말"];
+
+type MonsterCard = {
+  name: string;
+  level: number;
+  hp: number;
+  maxHp: number;
+  stage: number;
+};
+const MONSTER_DESCRIPTIONS: Record<string, string> = {
+  slime: "작고 말랑한 몬스터. 방심하면 몸을 던져 공격합니다.",
+  goblin: "동굴을 지키는 고블린 전사. 날카로운 무기에 주의하세요.",
+  wolf: "먹잇감을 노리는 야생 늑대. 빠른 발톱을 조심하세요.",
+  skeleton: "오래된 갑옷을 걸친 암흑 해골. 쉬지 않고 덤벼듭니다.",
+  golem: "단단한 마력 골렘. 강력한 일격을 견뎌내야 합니다.",
+  knight: "어둠의 힘을 품은 심연의 기사. 강력한 적입니다."
+};
+function monsterCard(monster: MonsterCard) {
+  const slug = monsterSlug(monster.name);
+  const name = monster.name.replace(/^[^가-힣A-Za-z]+/, "").trim();
+  return {
+    basicCard: {
+      title: "Lv." + monster.level + " " + name,
+      description:
+        "🗺️ 스테이지 " + monster.stage + " · 등급: 일반\n" +
+        "❤️ HP: " + monster.hp + "/" + monster.maxHp + "\n" +
+        MONSTER_DESCRIPTIONS[slug],
+      thumbnail: {
+        imageUrl: "https://kakao-rpg-bot.bongham.workers.dev/monsters/" + slug + ".jpg",
+        altText: name + " 몬스터 그림",
+        width: 800, height: 800,
+        fixedRatio: true
+      },
+      buttonLayout: "horizontal",
+      buttons: [
+        { label: "휴식", action: "message", messageText: "휴식" },
+        // Reuse existing '사냥' block; no extra '탐험' block required.
+        { label: "탐험", action: "message", messageText: "사냥" }
+      ]
+    }
+  };
+}
 function response(
   text: string,
   quick = ["사냥", "사냥터", "회복", "내정보", "스탯", "휴식"],
-  monster?: string
+  monster?: MonsterCard
 ) {
-  const outputs: any[] = [];
-  if (monster) {
-    outputs.push({ basicCard: {
-      title: monster.replace(/^[^가-힣A-Za-z]+/, "").trim(),
-      description: "👹 몬스터 이미지 · RPG 사냥터",
-      thumbnail: {
-        imageUrl: "https://kakao-rpg-bot.bongham.workers.dev/monsters/" +
-          monsterSlug(monster) + ".jpg",
-        altText: monster,
-        width: 800, height: 800
-      }
-    } });
-  }
-  outputs.push({ simpleText: { text: text.slice(0, 950) } });
+  // Present battle summary above the image card and its action buttons.
+  const outputs: any[] = [{ simpleText: { text: text.slice(0, 950) } }];
+  if (monster) outputs.push(monsterCard(monster));
   return Response.json({
     version: "2.0",
     template: {
@@ -105,12 +135,11 @@ async function spawnMonster(db: D1Database, p: Player): Promise<Player> {
 }
 async function monsterBattle(
   db: D1Database, p: Player, nowMs: number
-): Promise<{ text: string; monster: string }> {
+): Promise<{ text: string; monster?: MonsterCard }> {
   const mob = currentMonster(p) || makeMonster(p.stage, p.level);
   if (!hasHpSchema(p)) {
     return {
       text: "⚠️ 자동 전투는 플레이어 HP가 필요해요.\nD1 0004_player_hp.sql을 적용해 주세요.",
-      monster: mob.name
     };
   }
   // One skill call simulates the full fight until either combatant reaches zero HP.
@@ -139,7 +168,6 @@ async function monsterBattle(
   if (result.meta.changes !== 1) {
     return {
       text: "⏳ 전투 기록이 갱신되었어요. 잠시 후 다시 시도해 주세요.",
-      monster: mob.name
     };
   }
   const after: Player = {
@@ -188,7 +216,7 @@ async function monsterBattle(
     hpText(after),
     staminaText(after)
   ].join("\n");
-  return { monster: mob.name, text };
+  return { monster: { ...nextMob, stage: nextStage }, text };
 }
 
 async function handle(command: string, env: Env, botId: string, userKey: string) {
@@ -212,7 +240,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     if (!spawned) return response("⏳ 사냥터 상태를 불러오는 중이에요. 다시 시도해 주세요.", ["사냥터","내정보"]);
     return response("🏞️ 현재 사냥터 · 스테이지 " + state.stage + "\n" +
       monsterView(spawned) + "\n⚔️ '사냥'을 눌러 공격하세요!\n" +
-      staminaText(state), ["사냥","사냥터","내정보","출석"], spawned.name);
+      staminaText(state), ["사냥","사냥터","내정보","출석"], { ...spawned, stage: state.stage });
   }
   if (command === "출석현황") return response(attendanceInfo(p), ["출석","사냥","내정보"]);
   if (command === "출석") {
