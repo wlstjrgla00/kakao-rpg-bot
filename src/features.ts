@@ -60,17 +60,8 @@ function yesterdayOf(date: string): string {
   return new Date(Date.parse(date + "T00:00:00Z") - 86400000).toISOString().slice(0, 10);
 }
 
-export function staminaText(p: GamePlayer, now = Date.now()): string {
-  const cap = staminaCap(p);
-  const heading = "⚡ 스태미나 " + p.stamina + "/" + cap;
-  if (p.stamina >= cap || !hasDailySchema(p) || !p.stamina_updated_at) {
-    return heading;
-  }
-  const elapsed = Math.max(0, now - p.stamina_updated_at);
-  const remaining = REGEN_INTERVAL_MS - (elapsed % REGEN_INTERVAL_MS);
-  const secs = Math.ceil(remaining / 1000);
-  return heading + "\n⏳ 다음 회복까지 " +
-    Math.floor(secs / 60) + "분 " + (secs % 60) + "초 (10분마다 +1)";
+export function staminaText(p: GamePlayer): string {
+  return "⚡ 스태미나 " + p.stamina + "/" + staminaCap(p);
 }
 
 // Lazy recovery: existing players keep their HP, gold, equipment and attendance.
