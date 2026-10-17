@@ -12,7 +12,7 @@ import {
 import {
   type Equipment, type GearSlot, SLOT_LABEL,
   equipped, loadout, bonuses, slotOf, equipmentInfo,
-  inventory, equip, sell, enhance, rollDrop, power, display, gearName, cost, oddsLine, saleValue
+  inventory, equip, sell, sellAll, bulkSaleSummary, enhance, rollDrop, power, display, gearName, cost, oddsLine, saleValue
 } from "./equipment";
 
 interface Env {
@@ -442,16 +442,20 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       label:mode+" #"+item.id,
       messageText:mode+" "+item.id
     }));
-    buttons.push(page<pages
-      ? {label:"다음 페이지",messageText:mode+" 메뉴 "+(page+1)}
-      : {label:"인벤토리",messageText:"인벤토리"});
+    // Put "모두 판매" directly in the third card button on every sale page.
+    buttons.push(mode==="판매"
+      ? {label:"💰 모두 판매",messageText:"모두 판매"}
+      : page<pages
+        ? {label:"다음 페이지",messageText:mode+" 메뉴 "+(page+1)}
+        : {label:"인벤토리",messageText:"인벤토리"});
     return jobCard("🎒 "+mode+" 메뉴 "+page+"/"+pages,
       (mode==="장착"?"🛡️ 장착할 장비를 선택하세요. 같은 슬롯의 기존 장비는 보관됩니다.":
-        "💰 판매할 장비를 선택하세요. 판매 전에 확인 화면이 나타납니다.")+
+        "💰 판매할 장비를 선택하세요. '모두 판매'는 미착용 장비 전체에만 적용됩니다.")+
       "\n\n"+lines.join("\n\n"),buttons,
       ["인벤토리",mode==="장착"?"판매 메뉴":"장착 메뉴",
        ...(page>1?[mode+" 메뉴 "+(page-1)]:[]),
-       ...(mode==="장착"?["최고 장비 장착"]:[])]);
+       ...(page<pages?[mode+" 메뉴 "+(page+1)]:[]),
+       ...(mode==="장착"?["최고 장비 장착"]:["모두 판매"])]);
   }
   if (command === "최고 장비 장착") {
     // Pick the largest upgrade compared with the currently occupied SAME slot.
@@ -475,6 +479,36 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       [{label:"다음 장비도 확인",messageText:"최고 장비 장착"},
        {label:"장비",messageText:"장비"},
        {label:"인벤토리",messageText:"인벤토리"}]);
+  }
+  if(command==="모두 판매") {
+    const summary=await bulkSaleSummary(db,p.id);
+    if(!summary.count)return jobCard("💰 모두 판매",
+      "판매할 미착용 장비가 없어요.\n🛡️ 착용 중인 무기·갑옷·반지는 판매되지 않습니다.",
+      [{label:"판매 메뉴",messageText:"판매 메뉴"},
+       {label:"인벤토리",messageText:"인벤토리"}]);
+    return jobCard("💰 모두 판매 확인",
+      "📦 판매 대상: 미착용 장비 "+summary.count+"개\n"+
+      "💰 예상 획득: +"+summary.gold.toLocaleString()+"G\n\n"+
+      "🛡️ 착용 중인 무기·갑옷·반지는 판매 대상에서 제외됩니다.\n\n"+
+      "⚠️ 확정하면 미착용 장비를 모두 삭제합니다. 복구할 수 없습니다.",
+      [{label:"모두 판매 확정",
+        messageText:"모두 판매 확정 "+p.version+" "+summary.count+" "+summary.gold+" "+summary.newest},
+       {label:"취소",messageText:"판매 취소"},
+       {label:"판매 메뉴",messageText:"판매 메뉴"}],
+      ["인벤토리"]);
+  }
+  const allSaleConfirm=command.match(/^모두 판매 확정\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$/);
+  if(allSaleConfirm) {
+    const args=allSaleConfirm.slice(1).map(Number);
+    if(args.some(x=>!Number.isSafeInteger(x)||x<0) || args[1]===0)
+      return response("⚠️ 모두 판매 확인 데이터가 올바르지 않아요.",["모두 판매","판매 메뉴"]);
+    const result=await sellAll(db,p,args[0],
+      {count:args[1],gold:args[2],newest:args[3]});
+    return jobCard("💰 모두 판매 결과",result,
+      [{label:"판매 메뉴",messageText:"판매 메뉴"},
+       {label:"인벤토리",messageText:"인벤토리"},
+       {label:"장비 확인",messageText:"장비"}],
+      ["사냥","장착 메뉴"]);
   }
   if(command==="판매 취소")
     return jobCard("💰 판매 취소","장비는 판매되지 않았습니다.",
