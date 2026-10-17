@@ -24,6 +24,7 @@ type MonsterCard = {
   hp: number;
   maxHp: number;
   stage: number;
+  cleared?: boolean;
 };
 const MONSTER_DESCRIPTIONS: Record<string, string> = {
   slime: "작고 말랑한 몬스터. 방심하면 몸을 던져 공격합니다.",
@@ -36,12 +37,15 @@ const MONSTER_DESCRIPTIONS: Record<string, string> = {
 function monsterCard(monster: MonsterCard) {
   const slug = monsterSlug(monster.name);
   const name = monster.name.replace(/^[^가-힣A-Za-z]+/, "").trim();
+  const statusText = monster.cleared
+    ? "✅ 몬스터 퇴치 완료"
+    : "❤️ 몬스터 HP: " + monster.hp + "/" + monster.maxHp;
   return {
     basicCard: {
       title: "Lv." + monster.level + " " + name,
       description:
         "🗺️ 스테이지 " + monster.stage + " · 등급: 일반\n" +
-        "❤️ HP: " + monster.hp + "/" + monster.maxHp + "\n" +
+        statusText + "\n" +
         MONSTER_DESCRIPTIONS[slug],
       thumbnail: {
         imageUrl: "https://kakao-rpg-bot.bongham.workers.dev/monsters/" + slug + ".jpg",
@@ -216,7 +220,13 @@ async function monsterBattle(
     hpText(after),
     staminaText(after)
   ].join("\n");
-  return { monster: { ...nextMob, stage: nextStage }, text };
+  // The displayed card belongs to the monster just fought, not the next stage.
+  // When defeated, display HP at the moment combat ended. The database reset
+  // for the next attempt is unchanged.
+  const cardMonster: MonsterCard = won
+    ? { ...mob, hp: 0, stage: p.stage, cleared: true }
+    : { ...mob, hp: fight.remainingMonsterHp, stage: p.stage, cleared: false };
+  return { monster: cardMonster, text };
 }
 
 async function handle(command: string, env: Env, botId: string, userKey: string) {
