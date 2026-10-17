@@ -173,7 +173,8 @@ async function spawnMonster(db:D1Database,p:Player):Promise<Player> {
   // Keep wounded foes after defeat. Old stage-scaled or wrong-zone enemies
   // are automatically replaced once after migration with fair leveled mobs.
   if(existing && existing.name===expected.name &&
-     Math.abs(existing.level-expected.level)<=2)return p;
+     Math.abs(existing.level-expected.level)<=2 &&
+     existing.maxHp<=Math.ceil(expected.maxHp*1.25))return p;
   const result=await db.prepare(
     "UPDATE players SET monster_name=?,monster_level=?,monster_hp=?,monster_max_hp=?,"+
     "version=version+1 WHERE id=? AND version=?"
@@ -561,16 +562,89 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       ["장비","강화"]);
   }
   if (command === "내정보") return response(info(p)+"\n"+await equipmentInfo(db,p));
-  if (command === "사냥터") {
-    if (!hasMonsterSchema(p)) {
-      return response("⚠️ 사냥터 개편 준비 중입니다. D1 데이터베이스 업데이트(0003)를 적용해 주세요.", ["사냥","내정보"]);
-    }
-    const state = await spawnMonster(db, p);
-    const spawned = currentMonster(state);
-    if (!spawned) return response("⏳ 사냥터 상태를 불러오는 중이에요. 다시 시도해 주세요.", ["사냥터","내정보"]);
-    return response("🏞️ 현재 사냥터 · 스테이지 " + state.stage + "\n" +
-      monsterView(spawned) + "\n⚔️ '사냥'을 눌러 공격하세요!\n" +
-      staminaText(state), ["사냥","사냥터","내정보","출석"], { ...spawned, stage: state.stage });
+  const groundListMatch=command.match(/^사냥터 목록(?:\s+(\d+))?$/);
+  if(groundListMatch) {
+    if(!hasGroundSchema(p))return response(
+      "⚠️ 사냥터 선택 기능을 사용하려면 D1에 0008_hunting_grounds.sql을 먼저 실행해 주세요.",
+      ["내정보"]);
+    const page=groundListMatch[1]?Number(groundListMatch[1]):1;
+    const unlocked=GROUNDS.filter(g=>p.level>=g.minLevel);
+    const pages=Math.ceil(unlocked.length/2);
+    if(!Number.isSafeInteger(page)||page<1||page>pages)
+      return response("⚠️ 사냥터 페이지 범위를 확인해 주세요. (1~"+pages+")",["사냥터 목록"]);
+    const shown=unlocked.slice((page-1)*2,page*2);
+    const buttons=shown.map(g=>({
+      label:g.id+". "+g.name,messageText:"사냥터 이동 "+g.id
+    }));
+    buttons.push(page<pages
+      ? {label:"다음 사냥터",messageText:"사냥터 목록 "+(page+1)}
+      : {label:"자동 추천",messageText:"추천 사냥터"});
+    return jobCard("🗺️ 레벨별 사냥터 "+page+"/"+pages,
+      "⭐ 내 레벨 "+p.level+" | 현재 "+currentGround(p).name+"\n"+
+      "몬스터 레벨은 선택한 지역과 내 레벨을 기준으로 정해져요.\n"+
+      "스테이지는 누적 기록이며 적의 강함에 영향을 주지 않아요.\n\n"+
+      groundList(p.level),buttons,
+      ["사냥터","추천 사냥터",
+       ...(page>1?["사냥터 목록 "+(page-1)]:[]),
+       ...(page<pages?["사냥터 목록 "+(page+1)]:[])]);
+  }
+  const moveGroundMatch=command.match(/^사냥터 이동\s+(\d+)$/);
+  if(command==="추천 사냥터"||moveGroundMatch) {
+    if(!hasGroundSchema(p))return response(
+      "⚠️ Cloudflare D1에 0008_hunting_grounds.sql을 먼저 적용해 주세요.",["내정보"]);
+    const target=command==="추천 사냥터"
+      ? suggestedGround(p.level)
+      : GROUNDS.find(g=>g.id===Number(moveGroundMatch![1]));
+    if(!target)return response("⚠️ 해당 사냥터가 없어요.",["사냥터 목록"]);
+    if(p.level<target.minLevel)return jobCard("🔒 사냥터 잠김",
+      target.name+"은(는) Lv."+target.minLevel+"부터 입장할 수 있어요.\n현재 Lv."+p.level,
+      [{label:"사냥터 목록",messageText:"사냥터 목록"},
+       {label:"추천 사냥터",messageText:"추천 사냥터"}]);
+    const choice=command==="추천 사냥터"?"auto":String(target.id);
+    const sameZone=currentGround(p).id===target.id;
+    if(choice===p.hunting_ground && sameZone)
+      return jobCard("🏞️ 이미 선택한 사냥터",target.name+"\n👹 몬스터 Lv."+
+        targetMonsterLevel(p.level,target)+
+        "\n기존 몬스터의 남은 HP를 유지합니다.",
+        [{label:"사냥",messageText:"사냥"},{label:"사냥터",messageText:"사냥터"},
+         {label:"사냥터 목록",messageText:"사냥터 목록"}]);
+    // Traveling to another zone starts a fresh encounter; the old foe is not
+    // allowed to leak its high stage-scaled level into the selected zone.
+    const mob=makeMonster(p.stage,p.level,target);
+    const sql=sameZone
+      ? "UPDATE players SET hunting_ground=?,version=version+1 WHERE id=? AND version=?"
+      : "UPDATE players SET hunting_ground=?,monster_name=?,monster_level=?,"+
+        "monster_hp=?,monster_max_hp=?,version=version+1 WHERE id=? AND version=?";
+    const args=sameZone
+      ? [choice,p.id,p.version]
+      : [choice,mob.name,mob.level,mob.hp,mob.maxHp,p.id,p.version];
+    const result=await db.prepare(sql).bind(...args).run();
+    if(result.meta.changes!==1)
+      return response("⏳ 사냥터가 변경됐어요. 다시 확인해 주세요.",["사냥터"]);
+    return jobCard("✅ 사냥터 선택 완료",
+      target.name+" (Lv."+target.minLevel+"~"+target.maxLevel+")\n"+
+      "👹 출현 몬스터 Lv."+mob.level+"\n"+
+      (sameZone?"진행 중인 몬스터 HP는 유지됩니다.":
+        "새 지역으로 이동하여 새 몬스터가 등장합니다.")+
+      (choice==="auto"?"\n🔄 레벨에 따라 자동으로 사냥터를 변경합니다.":""),
+      [{label:"사냥",messageText:"사냥"},
+       {label:"사냥터 확인",messageText:"사냥터"},
+       {label:"사냥터 목록",messageText:"사냥터 목록"}]);
+  }
+  if(command==="사냥터") {
+    if(!hasMonsterSchema(p)||!hasGroundSchema(p))return response(
+      "⚠️ 사냥터 개편 준비 중입니다. 운영 D1에 0008_hunting_grounds.sql을 실행해 주세요.",
+      ["내정보"]);
+    const state=await spawnMonster(db,p);
+    const mob=currentMonster(state);
+    if(!mob)return response("⏳ 사냥터 상태를 다시 확인해 주세요.",["사냥터"]);
+    const ground=currentGround(state);
+    return response("🏞️ "+ground.name+" · 몬스터 Lv."+mob.level+
+      "\n🗺️ 전체 누적 처치 "+(state.stage-1)+"회"+
+      "\n"+monsterView(mob)+
+      "\n✅ 지역 변경은 '사냥터 목록'에서 가능해요.\n"+
+      staminaText(state),["사냥","사냥터 목록","추천 사냥터","회복","내정보"],
+      {...mob,stage:state.stage,ground:ground.name});
   }
   if (command === "출석현황") return response(attendanceInfo(p), ["출석","사냥","내정보"]);
   if (command === "출석") {
