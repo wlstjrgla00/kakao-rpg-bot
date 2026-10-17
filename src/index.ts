@@ -12,7 +12,7 @@ import {
 import {
   type Equipment, type GearSlot, SLOT_LABEL,
   equipped, loadout, bonuses, slotOf, equipmentInfo,
-  inventory, equip, sell, enhance, rollDrop, power, display, gearName, cost, oddsLine
+  inventory, equip, sell, enhance, rollDrop, power, display, gearName, cost, oddsLine, saleValue
 } from "./equipment";
 
 interface Env {
@@ -97,7 +97,12 @@ function healCard(title: string, description: string) {
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
-function jobCard(title: string, description: string, buttons: Array<{label:string; messageText:string}>) {
+function jobCard(
+  title: string,
+  description: string,
+  buttons: Array<{label:string; messageText:string}>,
+  quick: string[] = ["스탯"]
+) {
   return Response.json({
     version:"2.0",
     template: {
@@ -108,7 +113,7 @@ function jobCard(title: string, description: string, buttons: Array<{label:strin
           label:b.label, action:"message", messageText:b.messageText
         }))
       }}],
-      quickReplies:[{label:"스탯",action:"message",messageText:"스탯"}]
+      quickReplies:quick.map(label=>({label,action:"message",messageText:label}))
     }
   }, {headers:{"Cache-Control":"no-store"}});
 }
