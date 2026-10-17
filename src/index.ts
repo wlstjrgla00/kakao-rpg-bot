@@ -312,7 +312,9 @@ export default {
     if (imageMatch) {
       const encoded = MONSTER_IMAGES[imageMatch[1] as keyof typeof MONSTER_IMAGES];
       if (!encoded) return new Response("Not found", {status:404});
-      const bytes = Uint8Array.from(atob(encoded), ch => ch.charCodeAt(0));
+      const raw = atob(encoded);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
       return new Response(bytes.buffer as ArrayBuffer, { headers: {
         "Content-Type":"image/jpeg",
         "Cache-Control":"public, max-age=86400",
