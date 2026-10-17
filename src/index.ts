@@ -397,16 +397,61 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     if(!Number.isSafeInteger(page)||page<1||page>100000)
       return response("⚠️ 올바른 인벤토리 페이지를 입력해 주세요.",["인벤토리"]);
     const content=await inventory(db,p,page);
-    const picks=await db.prepare(
-      "SELECT id FROM (SELECT id,equipped FROM equipment WHERE player_id=? " +
-      "ORDER BY equipped DESC,id DESC LIMIT 8 OFFSET ?) AS page_items " +
-      "WHERE equipped=0 LIMIT 2"
-    ).bind(p.id,(page-1)*8).all<{id:number}>();
-    const buttons=(picks.results||[]).map(item=>({
-      label:"장착 #"+item.id,messageText:"장착 "+item.id
+    const navigation=[
+      ...(page>1?["인벤토리 "+(page-1)]:[]),
+      "장착 메뉴","판매 메뉴",
+      ...(content.includes("다음 페이지:")?["인벤토리 "+(page+1)]:[])
+    ];
+    return jobCard("🎒 인벤토리",content,[
+      {label:"🛡️ 장착 메뉴",messageText:"장착 메뉴"},
+      {label:"💰 판매 메뉴",messageText:"판매 메뉴"},
+      {label:"장비 확인",messageText:"장비"}
+    ],navigation);
+  }
+  // Separate action menus: show two unequipped items per page and navigation.
+  const manageMenu=command.match(/^(장착|판매) 메뉴(?:\s+(\d+))?$/);
+  if(manageMenu) {
+    const mode=manageMenu[1] as "장착"|"판매";
+    const page=manageMenu[2]?Number(manageMenu[2]):1;
+    if(!Number.isSafeInteger(page)||page<1||page>100000)
+      return response("⚠️ 페이지는 1 이상의 정수로 입력해 주세요.",["인벤토리"]);
+    const summary=await db.prepare(
+      "SELECT COUNT(*) AS total FROM equipment WHERE player_id=? AND equipped=0"
+    ).bind(p.id).first<{total:number}>();
+    const total=summary?.total||0;
+    const pages=Math.max(1,Math.ceil(total/2));
+    if(page>pages)return jobCard("🎒 "+mode+" 메뉴",
+      "마지막 페이지는 "+pages+"페이지예요.",
+      [{label:"마지막 페이지",messageText:mode+" 메뉴 "+pages},
+       {label:"인벤토리",messageText:"인벤토리"}],
+      ["장착 메뉴","판매 메뉴"]);
+    const rows=await db.prepare(
+      "SELECT * FROM equipment WHERE player_id=? AND equipped=0 ORDER BY id DESC LIMIT 2 OFFSET ?"
+    ).bind(p.id,(page-1)*2).all<Equipment>();
+    const items=rows.results||[];
+    if(!items.length)return jobCard("🎒 "+mode+" 메뉴",
+      mode==="장착"?"장착할 수 있는 보관 장비가 없어요.":"판매할 수 있는 미착용 장비가 없어요.",
+      [{label:"인벤토리",messageText:"인벤토리"},
+       {label:mode==="장착"?"판매 메뉴":"장착 메뉴",
+        messageText:mode==="장착"?"판매 메뉴":"장착 메뉴"}],
+      ["사냥","장비"]);
+    const lines=items.map(item=>
+      "#"+item.id+" "+display(item)+(mode==="판매"
+        ?"\n  💰 판매 가격 "+saleValue(item).toLocaleString()+"G":""));
+    const buttons=items.map(item=>({
+      label:mode+" #"+item.id,
+      messageText:mode+" "+item.id
     }));
-    buttons.push({label:"최고 장비 장착",messageText:"최고 장비 장착"});
-    return jobCard("🎒 인벤토리",content,buttons);
+    buttons.push(page<pages
+      ? {label:"다음 페이지",messageText:mode+" 메뉴 "+(page+1)}
+      : {label:"인벤토리",messageText:"인벤토리"});
+    return jobCard("🎒 "+mode+" 메뉴 "+page+"/"+pages,
+      (mode==="장착"?"🛡️ 장착할 장비를 선택하세요. 같은 슬롯의 기존 장비는 보관됩니다.":
+        "💰 판매할 장비를 선택하세요. 판매 전에 확인 화면이 나타납니다.")+
+      "\n\n"+lines.join("\n\n"),buttons,
+      ["인벤토리",mode==="장착"?"판매 메뉴":"장착 메뉴",
+       ...(page>1?[mode+" 메뉴 "+(page-1)]:[]),
+       ...(mode==="장착"?["최고 장비 장착"]:[])]);
   }
   if (command === "최고 장비 장착") {
     // Pick the largest upgrade compared with the currently occupied SAME slot.
