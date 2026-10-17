@@ -41,9 +41,9 @@ export type Odds={success:number;keep:number;down:number;destroy:number};
 export function odds(level:number):Odds {
   if(level<5)return {success:85,keep:15,down:0,destroy:0};
   if(level<10)return {success:65,keep:30,down:5,destroy:0};
-  if(level<15)return {success:45,keep:35,down:17,destroy:3};
-  if(level<18)return {success:30,keep:35,down:27,destroy:8};
-  return {success:20,keep:35,down:30,destroy:15};
+  if(level<15)return {success:35,keep:35,down:25,destroy:5};
+  if(level<18)return {success:25,keep:30,down:35,destroy:10};
+  return {success:15,keep:30,down:35,destroy:20};
 }
 export type Outcome="success"|"keep"|"down"|"destroy";
 export function rollUpgrade(level:number,random=Math.random):Outcome {
