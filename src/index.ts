@@ -9,6 +9,10 @@ import {
   type BaseClass, jobName, jobClass, jobTier, jobInt,
   nextPromotion, promotionPreview, promote, hasJobSchema
 } from "./jobs";
+import {
+  type Equipment, equipped, equipmentInfo, inventory, equip, sell, enhance,
+  rollDrop, power, display, cost, oddsLine
+} from "./equipment";
 
 interface Env {
   DB: D1Database;
@@ -20,7 +24,7 @@ type KakaoPayload = {
   bot?: { id?: string };
   userRequest?: { user?: { id?: string }, utterance?: string };
 };
-const actions = ["게임시작", "내정보", "전직", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "지능 올리기", "랭킹", "도움말"];
+const actions = ["게임시작", "내정보", "전직", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "지능 올리기", "장비", "인벤토리", "강화", "랭킹", "도움말"];
 
 type MonsterCard = {
   name: string;
@@ -179,12 +183,14 @@ async function monsterBattle(
     };
   }
   // One skill call simulates the full fight until either combatant reaches zero HP.
-  const fight = resolveFight({ ...p, player_hp: p.player_hp }, mob);
+  const worn = await equipped(db,p.id);
+  const fight = resolveFight({ ...p, player_hp: p.player_hp }, mob, undefined, worn?.attack_bonus || 0);
   const won = fight.victory;
   const gold = won ? 20 + p.stage * 5 : 0;
   const earnedExp = won ? 30 + p.stage * 6 : 0;
   const progress = calcProgress(p, earnedExp);
   const nextStage = p.stage + (won ? 1 : 0);
+  const loot = won ? rollDrop() : null;
   // Preserve the monster's remaining HP after defeat. A healed player
   // resumes the same encounter rather than getting a fresh full-HP monster.
   const nextMob = won ? makeMonster(nextStage, progress.level) :
@@ -197,11 +203,20 @@ async function monsterBattle(
     "monster_hp=?,monster_max_hp=?,stamina_updated_at=?," +
     "player_hp=?,hp_updated_at=?,last_hunt_at=?,version=version+1 " +
     "WHERE id=? AND version=? AND stamina>=1 AND last_hunt_at<=?";
-  const result = await db.prepare(sql).bind(
+  const battleUpdate = db.prepare(sql).bind(
     gold,progress.level,progress.exp,progress.points,nextStage,
     nextMob.name,nextMob.level,nextMob.hp,nextMob.maxHp,updatedStamp,
     fight.remainingHeroHp,nextHpAt,nowMs,p.id,p.version,nowMs-1000
-  ).run();
+  );
+  // The battle update and optional loot INSERT commit as one D1 transaction.
+  // A failed battle CAS cannot create a free item.
+  const lootInsert = loot ? db.prepare(
+    "INSERT INTO equipment (player_id,item_code,item_name,rarity,attack_bonus,upgrade_level,equipped) " +
+    "SELECT id,'single','장비',?,?,0,? FROM players " +
+    "WHERE id=? AND version=? AND last_hunt_at=?"
+  ).bind(loot,power(loot,0),worn?0:1,p.id,p.version+1,nowMs) : null;
+  const batch = await db.batch(lootInsert ? [battleUpdate,lootInsert] : [battleUpdate]);
+  const result = batch[0];
   if (result.meta.changes !== 1) {
     return {
       text: "⏳ 전투 기록이 갱신되었어요. 잠시 후 다시 시도해 주세요.",
@@ -219,11 +234,16 @@ async function monsterBattle(
         fight.logs[3]
       ]
     : fight.logs;
+  const lootLine = loot && batch.length > 1 && batch[1].meta.changes === 1
+    ? "🎁 장비 획득! " + display({rarity:loot,upgrade_level:0,attack_bonus:power(loot,0)} as Equipment) +
+      (worn ? " (인벤토리 보관)" : " (자동 장착)")
+    : "";
   const resultLines = won
     ? [
         "🏆 승리! " + mob.name + " 처치",
         "💰 +" + gold + "G · ✨ 경험치 +" + earnedExp,
-        ...(progress.points ? ["🎉 레벨업! 스탯 포인트 +" + progress.points] : [])
+        ...(progress.points ? ["🎉 레벨업! 스탯 포인트 +" + progress.points] : []),
+        ...(lootLine ? [lootLine] : [])
       ]
     : [
         "💀 패배! 플레이어가 쓰러졌어요.",
