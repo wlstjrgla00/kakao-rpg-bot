@@ -162,7 +162,7 @@ export async function inventory(db:D1Database,p:GamePlayer,page=1):Promise<strin
  const lines=(result.results||[]).map(e=>
    (e.equipped?"✅ 착용 | ":"📦 보유 | ")+"#"+e.id+" "+display(e));
  return "🎒 인벤토리 "+page+"/"+pages+" ("+number+"개)\n"+lines.join("\n")+
-   "\n\n아래 장착 메뉴/판매 메뉴에서 장비를 선택하세요."+(page<pages?"\n다음 페이지: 인벤토리 "+(page+1):"");
+   "\n\n아래 장착 메뉴/판매 메뉴 버튼에서 장비를 선택하세요."+(page<pages?"\n다음 페이지: 인벤토리 "+(page+1):"");
 }
 export async function equip(db:D1Database,p:GamePlayer,id:number):Promise<string> {
  const e=await db.prepare("SELECT * FROM equipment WHERE id=? AND player_id=?")
