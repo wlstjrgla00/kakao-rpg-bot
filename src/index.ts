@@ -26,14 +26,6 @@ type MonsterCard = {
   stage: number;
   cleared?: boolean;
 };
-const MONSTER_DESCRIPTIONS: Record<string, string> = {
-  slime: "작고 말랑한 몬스터. 방심하면 몸을 던져 공격합니다.",
-  goblin: "동굴을 지키는 고블린 전사. 날카로운 무기에 주의하세요.",
-  wolf: "먹잇감을 노리는 야생 늑대. 빠른 발톱을 조심하세요.",
-  skeleton: "오래된 갑옷을 걸친 암흑 해골. 쉬지 않고 덤벼듭니다.",
-  golem: "단단한 마력 골렘. 강력한 일격을 견뎌내야 합니다.",
-  knight: "어둠의 힘을 품은 심연의 기사. 강력한 적입니다."
-};
 function monsterCard(monster: MonsterCard) {
   const slug = monsterSlug(monster.name);
   const name = monster.name.replace(/^[^가-힣A-Za-z]+/, "").trim();
@@ -45,8 +37,7 @@ function monsterCard(monster: MonsterCard) {
       title: "Lv." + monster.level + " " + name,
       description:
         "🗺️ 스테이지 " + monster.stage + " · 등급: 일반\n" +
-        statusText + "\n" +
-        MONSTER_DESCRIPTIONS[slug],
+        statusText,
       thumbnail: {
         imageUrl: "https://kakao-rpg-bot.bongham.workers.dev/monsters/" + slug + ".jpg",
         altText: name + " 몬스터 그림",
