@@ -2,7 +2,9 @@ import {
   type GamePlayer, hydrateStamina, hasDailySchema, hasMonsterSchema, staminaText,
   attendanceInfo, claimAttendance, staminaCap
 } from "./features";
-import { hasHpSchema, maxHp, attackPower, critChance, dodgeChance, defenseReduction, hpText, statText, hydrateHp } from "./stats";
+import { hasHpSchema, hpText, statText, hydrateHp } from "./stats";
+import { resolveFight } from "./combat";
+import { MONSTER_IMAGES } from "./monster-images";
 
 interface Env {
   DB: D1Database;
@@ -15,16 +17,40 @@ type KakaoPayload = {
   userRequest?: { user?: { id?: string }, utterance?: string };
 };
 const actions = ["게임시작", "내정보", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "랭킹", "도움말"];
-function response(text: string, quick = ["사냥", "사냥터", "내정보", "출석", "스탯", "휴식"]) {
+function response(
+  text: string,
+  quick = ["사냥", "사냥터", "내정보", "출석", "스탯", "휴식"],
+  monster?: string
+) {
+  const outputs: any[] = [];
+  if (monster) {
+    outputs.push({ basicCard: {
+      title: monster.replace(/^[^가-힣A-Za-z]+/, "").trim(),
+      description: "👹 몬스터 이미지 · RPG 사냥터",
+      thumbnail: {
+        imageUrl: "https://kakao-rpg-bot.bongham.workers.dev/monsters/" +
+          monsterSlug(monster) + ".jpg",
+        altText: monster,
+        width: 800, height: 800
+      }
+    } });
+  }
+  outputs.push({ simpleText: { text: text.slice(0, 950) } });
   return Response.json({
     version: "2.0",
     template: {
-      outputs: [{ simpleText: { text: text.slice(0, 950) } }],
+      outputs,
       quickReplies: quick.map(label => ({ label, action: "message", messageText: label }))
     }
   }, { headers: { "Cache-Control": "no-store" } });
 }
 function expNeeded(level: number) { return level * 100; }
+function expProgress(level: number, exp: number) {
+  const target = expNeeded(level);
+  const percentage = Math.min(100, Math.max(0, exp / target * 100));
+  return "⭐ Lv." + level + " 경험치 " + exp + "/" + target +
+    " (" + percentage.toFixed(1) + "%)";
+}
 function calcProgress(p: Player, gainedExp: number) {
   let level = p.level, exp = p.exp + gainedExp, points = 0;
   while (exp >= expNeeded(level) && level < 1000) {
@@ -37,7 +63,7 @@ async function load(db: D1Database, botId: string, userKey: string) {
     .bind(botId, userKey).first<Player>();
 }
 function info(p: Player) {
-  return `🛡️ ${p.nickname}\n레벨 ${p.level} | 경험치 ${p.exp}/${expNeeded(p.level)}\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}`;
+  return `🛡️ ${p.nickname}\n레벨 ${p.level} | 경험치 ${p.exp}/${expNeeded(p.level)} (${(p.exp/expNeeded(p.level)*100).toFixed(1)}%)\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}`;
 }
 type Monster = { name: string; level: number; hp: number; maxHp: number };
 
@@ -54,6 +80,11 @@ function makeMonster(stage: number, playerLevel: number): Monster {
 function currentMonster(p: Player): Monster | null {
   if (!p.monster_name || !p.monster_hp || !p.monster_max_hp || !p.monster_level) return null;
   return { name: p.monster_name, hp: p.monster_hp, maxHp: p.monster_max_hp, level: p.monster_level };
+}
+const MONSTER_SLUGS = ["slime","goblin","wolf","skeleton","golem","knight"];
+function monsterSlug(name: string): string {
+  const index = MONSTERS.indexOf(name);
+  return MONSTER_SLUGS[index < 0 ? 0 : index];
 }
 function monsterView(m: Monster): string {
   return "👹 " + m.name + " | Lv." + m.level +
@@ -72,70 +103,75 @@ async function spawnMonster(db: D1Database, p: Player): Promise<Player> {
   };
   return (await db.prepare("SELECT * FROM players WHERE id=?").bind(p.id).first<Player>()) || p;
 }
-async function monsterBattle(db: D1Database, p: Player, nowMs: number): Promise<string> {
+async function monsterBattle(
+  db: D1Database, p: Player, nowMs: number
+): Promise<{ text: string; monster: string }> {
   const mob = currentMonster(p) || makeMonster(p.stage, p.level);
-  const critical = Math.random() * 100 < critChance(p);
-  const baseDamage = Math.max(1, attackPower(p) + Math.floor(Math.random() * 7) - 3);
-  const rawDamage = critical ? Math.floor(baseDamage * 1.5) : baseDamage;
-  const damage = Math.min(mob.hp, rawDamage);
-  const remainingHp = Math.max(0, mob.hp - damage);
-  const killed = remainingHp === 0;
-
-  // Enemies counterattack only if they survive; defense reduces received damage
-  // and agility provides a chance to dodge completely.
-  const countered = !killed && Math.random() < 0.55;
-  const dodged = countered && Math.random() * 100 < dodgeChance(p);
-  const incoming = countered && !dodged && hasHpSchema(p)
-    ? Math.max(0, 4 + Math.ceil(mob.level * 1.6) - defenseReduction(p))
-    : 0;
-  const hasHealth = hasHpSchema(p);
-  const newHealth = hasHealth ? Math.max(0, p.player_hp - incoming) : 0;
-  const nextHealthAt = incoming > 0 ? nowMs : (p.hp_updated_at || nowMs);
-
-  const gold = killed ? 20 + p.stage * 5 : 0;
-  const exp = killed ? 30 + p.stage * 6 : 0;
-  const progress = calcProgress(p, exp);
-  const nextStage = p.stage + (killed ? 1 : 0);
-  const nextMob = killed ? makeMonster(nextStage, progress.level) : {...mob, hp: remainingHp};
+  if (!hasHpSchema(p)) {
+    return {
+      text: "⚠️ 자동 전투는 플레이어 HP가 필요해요.\nD1 0004_player_hp.sql을 적용해 주세요.",
+      monster: mob.name
+    };
+  }
+  // One skill call simulates the full fight until either combatant reaches zero HP.
+  const fight = resolveFight({ ...p, player_hp: p.player_hp }, mob);
+  const won = fight.victory;
+  const gold = won ? 20 + p.stage * 5 : 0;
+  const earnedExp = won ? 30 + p.stage * 6 : 0;
+  const progress = calcProgress(p, earnedExp);
+  const nextStage = p.stage + (won ? 1 : 0);
+  // Loss resets current monster's HP for the next encounter.
+  const nextMob = won ? makeMonster(nextStage, progress.level) :
+    { ...mob, hp: mob.maxHp };
   const updatedStamp = p.stamina >= staminaCap(p) ? nowMs : (p.stamina_updated_at || nowMs);
-  const hpClause = hasHealth ? ",player_hp=?,hp_updated_at=?" : "";
-  const hpBindings = hasHealth ? [newHealth,nextHealthAt] : [];
-
-  const result = await db.prepare(
+  const nextHpAt = fight.taken > 0 ? nowMs : (p.hp_updated_at || nowMs);
+  const sql =
     "UPDATE players SET stamina=stamina-1,gold=gold+?,level=?,exp=?," +
     "stat_points=stat_points+?,stage=?,monster_name=?,monster_level=?," +
-    "monster_hp=?,monster_max_hp=?,stamina_updated_at=?" + hpClause +
-    ",last_hunt_at=?,version=version+1 WHERE id=? AND version=? AND " +
-    "stamina>=1 AND last_hunt_at<=?"
-  ).bind(
+    "monster_hp=?,monster_max_hp=?,stamina_updated_at=?," +
+    "player_hp=?,hp_updated_at=?,last_hunt_at=?,version=version+1 " +
+    "WHERE id=? AND version=? AND stamina>=1 AND last_hunt_at<=?";
+  const result = await db.prepare(sql).bind(
     gold,progress.level,progress.exp,progress.points,nextStage,
-    nextMob.name,nextMob.level,nextMob.hp,nextMob.maxHp,
-    updatedStamp,...hpBindings,nowMs,p.id,p.version,nowMs-1000
+    nextMob.name,nextMob.level,nextMob.hp,nextMob.maxHp,updatedStamp,
+    fight.remainingHeroHp,nextHpAt,nowMs,p.id,p.version,nowMs-1000
   ).run();
   if (result.meta.changes !== 1) {
-    return "⏳ 전투 상황이 갱신됐어요. 잠시 후 다시 사냥하세요.";
+    return {
+      text: "⏳ 전투 기록이 갱신되었어요. 잠시 후 다시 시도해 주세요.",
+      monster: mob.name
+    };
   }
   const after: Player = {
-    ...p, stamina:p.stamina-1,stamina_updated_at:updatedStamp,
-    player_hp:hasHealth ? newHealth : p.player_hp,
-    hp_updated_at:hasHealth ? nextHealthAt : p.hp_updated_at,
-    level:progress.level
+    ...p, stamina: p.stamina - 1, stamina_updated_at: updatedStamp,
+    player_hp: fight.remainingHeroHp, hp_updated_at: nextHpAt,
+    level: progress.level, exp: progress.exp
   };
-  const enemyMessage = countered
-    ? (dodged ? "💨 몬스터 반격 회피 성공!" :
-       "🛡️ 몬스터 반격 피해: " + incoming + " (방어력 적용)")
-    : (!killed ? "🛡️ 몬스터의 반격 없음" : "");
-  const resultText = killed
-    ? "🏆 몬스터 처치!\n💰 골드 +" + gold + "G | ✨ 경험치 +" + exp +
-      (progress.points ? "\n🎉 레벨업! Lv." + progress.level +
-      " (스탯포인트 +" + progress.points + ")" : "") +
-      "\n\n✨ 다음 몬스터 등장!\n" + monsterView(nextMob)
-    : "❤️ 몬스터 남은 HP: " + remainingHp + "/" + mob.maxHp;
-  return "⚔️ 전투 결과 · 스테이지 " + p.stage + "\n" +
-    "👹 " + mob.name + " Lv." + mob.level + " (HP " + mob.maxHp + ")\n" +
-    "🗡️ 내가 준 피해: " + damage + (critical ? " 💥 치명타!" : "") +
-    "\n" + resultText + (enemyMessage ? "\n" + enemyMessage : "") +
-    "\n" + (hasHealth ? hpText(after) + "\n" : "") + staminaText(after);
+  const summary = won
+    ? "🏆 승리! " + mob.name + " 처치\n💰 +" + gold +
+      "G · ✨ 경험치 +" + earnedExp +
+      (progress.points ? "\n🎉 레벨업! 스탯 포인트 +" + progress.points : "") +
+      "\n✨ 다음 몬스터: " + nextMob.name + " Lv." + nextMob.level +
+      " (HP " + nextMob.hp + "/" + nextMob.maxHp + ")"
+    : "💀 패배! 플레이어가 쓰러졌어요.\n" +
+      "🔄 몬스터 HP가 " + mob.maxHp + "/" + mob.maxHp + "로 초기화돼요." +
+      "\n🌿 HP는 휴식 중에 자동 회복됩니다.";
+  return {
+    monster: mob.name,
+    text:
+      "⚔️ 자동 전투 결과 · STAGE " + p.stage + "\n" +
+      "👹 " + mob.name + " Lv." + mob.level +
+      " | HP " + mob.hp + "/" + mob.maxHp + "\n" +
+      "🔁 " + fight.rounds + "턴 전투 완료\n" +
+      "🗡️ 총 가한 피해 " + fight.dealt +
+      " (치명타 " + fight.criticalHits + "회)\n" +
+      "🛡️ 총 받은 피해 " + fight.taken +
+      " (회피 " + fight.dodges + "회)\n" +
+      summary + "\n" + expProgress(progress.level, progress.exp) + "\n" +
+      hpText(after) + "\n" + staminaText(after) +
+      "\n—— 전투 기록 ——\n" +
+      fight.logs.slice(0, 4).join("\n")
+  };
 }
 
 async function handle(command: string, env: Env, botId: string, userKey: string) {
@@ -159,7 +195,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     if (!spawned) return response("⏳ 사냥터 상태를 불러오는 중이에요. 다시 시도해 주세요.", ["사냥터","내정보"]);
     return response("🏞️ 현재 사냥터 · 스테이지 " + state.stage + "\n" +
       monsterView(spawned) + "\n⚔️ '사냥'을 눌러 공격하세요!\n" +
-      staminaText(state), ["사냥","사냥터","내정보","출석"]);
+      staminaText(state), ["사냥","사냥터","내정보","출석"], spawned.name);
   }
   if (command === "출석현황") return response(attendanceInfo(p), ["출석","사냥","내정보"]);
   if (command === "출석") {
@@ -216,8 +252,8 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
         "💔 체력이 부족해서 사냥할 수 없어요.\n" + hpText(p) +
         "\n휴식 후 다시 도전해 주세요.", ["휴식","내정보","스탯"]
       );
-      return response(await monsterBattle(db, p, nowMs),
-        ["사냥","사냥터","내정보","스탯","휴식"]);
+      const outcome = await monsterBattle(db, p, nowMs);
+      return response(outcome.text, ["사냥","사냥터","내정보","스탯","휴식"], outcome.monster);
     }
     // Fallback until migration 0003 is applied: keep the old hunting engine playable.
     const atk = p.strength * 3 + p.level * 2;
@@ -272,6 +308,17 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") return Response.json({ok:true,service:"kakao-rpg-bot"});
+    const imageMatch = request.method === "GET" && url.pathname.match(/^\/monsters\/([a-z]+)\.jpg$/);
+    if (imageMatch) {
+      const encoded = MONSTER_IMAGES[imageMatch[1] as keyof typeof MONSTER_IMAGES];
+      if (!encoded) return new Response("Not found", {status:404});
+      const bytes = Uint8Array.from(atob(encoded), ch => ch.charCodeAt(0));
+      return new Response(bytes, { headers: {
+        "Content-Type":"image/jpeg",
+        "Cache-Control":"public, max-age=86400",
+        "Access-Control-Allow-Origin":"*"
+      } });
+    }
     if (request.method !== "POST" || url.pathname !== "/kakao/skill") return new Response("Not found",{status:404});
     if (!env.KAKAO_SKILL_KEY || request.headers.get("x-api-key") !== env.KAKAO_SKILL_KEY)
       return new Response("Forbidden",{status:403});
