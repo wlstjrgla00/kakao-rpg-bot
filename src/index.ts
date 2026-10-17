@@ -374,7 +374,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
   );
   // "힘 올리기" remains a 1-point action; "힘 올리기 24" spends 24
   // points in a single atomic D1 update. All four attributes are supported.
-  const statMatch = command.match(/^(힘|방어|민첩|지능)\\s+올리기(?:\\s+(\\S+))?$/);
+  const statMatch = command.match(/^(힘|방어|민첩|지능)\s+올리기(?:\s+(\S+))?$/);
   if (statMatch) {
     const statName = statMatch[1];
     const column = ({
@@ -382,20 +382,20 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       "민첩": "agility", "지능": "intelligence"
     } as Record<string, "strength" | "defense" | "agility" | "intelligence">)[statName];
     const countText = statMatch[2];
-    if (countText !== undefined && !/^\\d{1,8}$/.test(countText)) {
-      return response("⚠️ 스탯 개수는 1 이상의 정수로 입력해 주세요.\\n예: 힘 올리기 24", ["스탯"]);
+    if (countText !== undefined && !/^\d{1,8}$/.test(countText)) {
+      return response("⚠️ 스탯 개수는 1 이상의 정수로 입력해 주세요.\n예: 힘 올리기 24", ["스탯"]);
     }
     const amount = countText === undefined ? 1 : Number(countText);
     if (!Number.isSafeInteger(amount) || amount < 1) {
-      return response("⚠️ 스탯은 1개 이상 올려야 해요.\\n예: 힘 올리기 24", ["스탯"]);
+      return response("⚠️ 스탯은 1개 이상 올려야 해요.\n예: 힘 올리기 24", ["스탯"]);
     }
     if (column === "intelligence" && !hasJobSchema(p)) {
       return response("⚠️ 지능 스탯은 D1 전직 업데이트(0005)가 필요합니다.", ["스탯"]);
     }
     if (p.stat_points < amount) {
       return response(
-        "⚠️ 스탯 포인트가 부족합니다.\\n" +
-        "✨ 보유 " + p.stat_points + "P / 요청 " + amount + "P\\n" +
+        "⚠️ 스탯 포인트가 부족합니다.\n" +
+        "✨ 보유 " + p.stat_points + "P / 요청 " + amount + "P\n" +
         "포인트가 부족하면 아무것도 변경되지 않아요.",
         ["스탯","사냥"]
       );
@@ -414,7 +414,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     );
     const fresh = await load(db,botId,userKey);
     return response(
-      "✅ " + statName + " +" + amount + " 적용! (스탯 포인트 -" + amount + ")\\n\\n" +
+      "✅ " + statName + " +" + amount + " 적용! (스탯 포인트 -" + amount + ")\n\n" +
       statText(fresh!),
       ["힘 올리기","방어 올리기","민첩 올리기","지능 올리기","사냥","전직"]
     );
