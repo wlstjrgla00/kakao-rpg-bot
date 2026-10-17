@@ -2,7 +2,7 @@ import {
   type GamePlayer, hydrateStamina, hasDailySchema, hasMonsterSchema, staminaText,
   attendanceInfo, claimAttendance, staminaCap
 } from "./features";
-import { hasHpSchema, hpText, statText, hydrateHp } from "./stats";
+import { hasHpSchema, hpText, maxHp, statText, hydrateHp } from "./stats";
 import { resolveFight } from "./combat";
 import { MONSTER_IMAGES } from "./monster-images";
 
@@ -16,10 +16,10 @@ type KakaoPayload = {
   bot?: { id?: string };
   userRequest?: { user?: { id?: string }, utterance?: string };
 };
-const actions = ["게임시작", "내정보", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "랭킹", "도움말"];
+const actions = ["게임시작", "내정보", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "랭킹", "도움말"];
 function response(
   text: string,
-  quick = ["사냥", "사냥터", "내정보", "출석", "스탯", "휴식"],
+  quick = ["사냥", "사냥터", "회복", "내정보", "스탯", "휴식"],
   monster?: string
 ) {
   const outputs: any[] = [];
@@ -155,7 +155,7 @@ async function monsterBattle(
       " (HP " + nextMob.hp + "/" + nextMob.maxHp + ")"
     : "💀 패배! 플레이어가 쓰러졌어요.\n" +
       "🔄 몬스터 HP가 " + mob.maxHp + "/" + mob.maxHp + "로 초기화돼요." +
-      "\n🌿 HP는 휴식 중에 자동 회복됩니다.";
+      "\n💚 회복 또는 휴식 후 재도전할 수 있어요.";
   return {
     monster: mob.name,
     text:
@@ -202,9 +202,40 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     const message = await claimAttendance(db, p);
     return response(message, ["출석현황","사냥","내정보"]);
   }
+  if (command === "회복") {
+    if (!hasHpSchema(p)) {
+      return response("⚠️ 체력 회복을 사용하려면 DB 업데이트(0004)를 먼저 적용해 주세요.", ["내정보", "휴식"]);
+    }
+    const cap = maxHp(p);
+    if (p.player_hp >= cap) {
+      return response("💚 이미 체력이 가득합니다!\n❤️ HP " + cap + "/" + cap,
+        ["사냥", "내정보", "휴식"]);
+    }
+    // Restore 45% of the CURRENT maximum HP, rounded up. Never exceed the cap.
+    const healAmount = Math.ceil(cap * 0.45);
+    const actualHeal = Math.min(healAmount, cap - p.player_hp);
+    const now = Date.now();
+    const update = await db.prepare(
+      "UPDATE players SET player_hp=MIN(?,player_hp+?)," +
+      "hp_updated_at=CASE WHEN player_hp+?>=? THEN ? ELSE hp_updated_at END," +
+      "version=version+1 WHERE id=? AND version=? AND player_hp<?"
+    ).bind(cap, healAmount, healAmount, cap, now, p.id, p.version, cap).run();
+    if (update.meta.changes !== 1) {
+      return response("⏳ 체력 상태가 변경됐어요. 다시 확인한 후 회복해 주세요.", ["내정보", "회복"]);
+    }
+    const healed = p.player_hp + actualHeal;
+    return response(
+      "💚 회복 성공!\n" +
+      "💊 최대 체력의 45% 회복 (" + healAmount + " HP 기준)\n" +
+      "❤️ 실제 회복량 +" + actualHeal + " HP\n" +
+      "❤️ 현재 체력 " + healed + "/" + cap +
+      "\n\n사냥을 계속할 수 있어요!",
+      ["사냥", "회복", "내정보", "스탯", "휴식"]
+    );
+  }
   if (command === "휴식") return response("🌿 휴식 중에도 스태미나는 자동으로 회복돼요.\n" +
-    staminaText(p) + "\n" + hpText(p) + "\n스태미나는 10분마다 1, HP는 5분마다 10 회복", ["사냥","출석","내정보"]);
-  if (command === "도움말") return response(`🎮 사용 가능한 명령어\n${actions.join(" / ")}\n\n사냥에는 스태미나 1이 필요합니다. 연속 실행에는 1초 제한이 있습니다. 스태미나는 10분마다 1씩 자동 회복합니다. 출석은 한국시간 매일 1회 가능합니다.`);
+    staminaText(p) + "\n" + hpText(p) + "\n스태미나는 10분마다 1, HP는 5분마다 10 회복", ["사냥","회복","출석","내정보"]);
+  if (command === "도움말") return response(`🎮 사용 가능한 명령어\n${actions.join(" / ")}\n\n사냥에는 스태미나 1이 필요합니다. 연속 실행에는 1초 제한이 있습니다. 스태미나는 10분마다 1씩 자동 회복합니다. 출석은 한국시간 매일 1회 가능합니다. 회복은 사용할 때마다 최대 HP의 45%를 보충합니다.`);
   if (command === "스탯") return response(
     statText(p), ["힘 올리기","방어 올리기","민첩 올리기","내정보"]
   );
@@ -250,10 +281,10 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     if (hasMonsterSchema(p)) {
       if (hasHpSchema(p) && p.player_hp <= 0) return response(
         "💔 체력이 부족해서 사냥할 수 없어요.\n" + hpText(p) +
-        "\n휴식 후 다시 도전해 주세요.", ["휴식","내정보","스탯"]
+        "\n회복 또는 휴식 후 다시 도전해 주세요.", ["회복","휴식","내정보","스탯"]
       );
       const outcome = await monsterBattle(db, p, nowMs);
-      return response(outcome.text, ["사냥","사냥터","내정보","스탯","휴식"], outcome.monster);
+      return response(outcome.text, ["사냥","사냥터","회복","내정보","스탯","휴식"], outcome.monster);
     }
     // Fallback until migration 0003 is applied: keep the old hunting engine playable.
     const atk = p.strength * 3 + p.level * 2;
