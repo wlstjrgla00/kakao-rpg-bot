@@ -142,7 +142,7 @@ function info(p: Player) {
   const next = nextPromotion(p);
   const notice = next && p.level >= next.level
     ? "\n🎓 " + next.tier + "차 전직 가능! '전직'을 입력하세요." : "";
-  return `🛡️ ${p.nickname}\n${jobName(p)} | 레벨 ${p.level}\n경험치 ${p.exp}/${expNeeded(p.level)} (${(p.exp/expNeeded(p.level)*100).toFixed(1)}%)\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility} | 🧠 지능 ${jobInt(p)}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}` + notice;
+  return `🛡️ ${p.nickname}\n${jobName(p)} | 레벨 ${p.level}\n경험치 ${p.exp}/${expNeeded(p.level)} (${(p.exp/expNeeded(p.level)*100).toFixed(1)}%)\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility} | 🧠 지능 ${jobInt(p)}\n✨ 남은 스탯포인트 ${p.stat_points}\n🏞️ 현재 사냥터 ${hasGroundSchema(p)?currentGround(p).name:"사냥터 DB 업데이트 필요"}${p.hunting_ground==="auto"?" (자동)":""}\n🗺️ 누적 처치 ${p.stage-1}회` + notice;
 }
 type Monster = { name: string; level: number; hp: number; maxHp: number };
 
@@ -281,6 +281,8 @@ async function monsterBattle(
     ...resultLines,
     expProgress(progress.level, progress.exp),
     ...(nextPromotion(after) && progress.level >= nextPromotion(after)!.level ? ["🎓 전직 가능! '전직' 명령을 입력하세요."] : []),
+    ...(won && p.hunting_ground==="auto" && currentGround(after).id!==currentGround(p).id
+       ? ["🏞️ 새 사냥터 해금! "+currentGround(after).name+" (자동 이동)"] : []),
     hpText(after),
     staminaText(after)
   ].join("\n");
@@ -748,12 +750,16 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       ["사냥","휴식","내정보"]
     );
     if (hasMonsterSchema(p)) {
+      if (!hasGroundSchema(p)) return response(
+        "⚠️ 운영 D1에 0008_hunting_grounds.sql을 적용해 주세요. 사냥터가 안전하게 구성된 다음 사냥할 수 있어요.",
+        ["사냥터","내정보"]);
       if (hasHpSchema(p) && p.player_hp <= 0) return response(
         "💔 체력이 부족해서 사냥할 수 없어요.\n" + hpText(p) +
         "\n회복 또는 휴식 후 다시 도전해 주세요.", ["회복","휴식","내정보","스탯"]
       );
-      const outcome = await monsterBattle(db, p, nowMs);
-      return response(outcome.text, ["사냥","회복","장비","인벤토리","강화","스탯"], outcome.monster);
+      const ready=await spawnMonster(db,p);
+      const outcome = await monsterBattle(db, ready, nowMs);
+      return response(outcome.text, ["사냥","회복","사냥터 목록","장비","인벤토리","강화"], outcome.monster);
     }
     // Fallback until migration 0003 is applied: keep the old hunting engine playable.
     const atk = p.strength * 3 + p.level * 2;
