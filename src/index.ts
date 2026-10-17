@@ -181,9 +181,7 @@ async function monsterBattle(
     ? [
         "🏆 승리! " + mob.name + " 처치",
         "💰 +" + gold + "G · ✨ 경험치 +" + earnedExp,
-        ...(progress.points ? ["🎉 레벨업! 스탯 포인트 +" + progress.points] : []),
-        "🗺️ 다음 몬스터: " + nextMob.name + " Lv." + nextMob.level +
-          " (HP " + nextMob.hp + "/" + nextMob.maxHp + ")"
+        ...(progress.points ? ["🎉 레벨업! 스탯 포인트 +" + progress.points] : [])
       ]
     : [
         "💀 패배! 플레이어가 쓰러졌어요.",
@@ -203,10 +201,6 @@ async function monsterBattle(
     "",
     "—— 전투 결과 ——",
     ...resultLines,
-    "🗡️ 총 가한 피해 " + fight.dealt +
-      " | 🛡️ 총 받은 피해 " + fight.taken,
-    "💥 치명타 " + fight.criticalHits +
-      "회 | 💨 회피 " + fight.dodges + "회",
     expProgress(progress.level, progress.exp),
     hpText(after),
     staminaText(after)
