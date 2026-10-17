@@ -188,7 +188,7 @@ async function spawnMonster(db:D1Database,p:Player):Promise<Player> {
 async function monsterBattle(
   db: D1Database, p: Player, nowMs: number
 ): Promise<{ text: string; monster?: MonsterCard }> {
-  const mob = currentMonster(p) || makeMonster(p.stage, p.level);
+  const mob = currentMonster(p) || makeMonster(p.stage,p.level,currentGround(p));
   if (!hasHpSchema(p)) {
     return {
       text: "⚠️ 자동 전투는 플레이어 HP가 필요해요.\nD1 0004_player_hp.sql을 적용해 주세요.",
@@ -198,15 +198,16 @@ async function monsterBattle(
   const worn = await loadout(db,p.id);
   const fight = resolveFight({ ...p, player_hp: p.player_hp }, mob, undefined, bonuses(worn));
   const won = fight.victory;
-  const gold = won ? 20 + p.stage * 5 : 0;
-  const earnedExp = won ? 30 + p.stage * 6 : 0;
+  const rewards=rewardForMonster(mob.level);
+  const gold=won?rewards.gold:0;
+  const earnedExp=won?rewards.exp:0;
   const progress = calcProgress(p, earnedExp);
   const nextStage = p.stage + (won ? 1 : 0);
-  const loot = won ? rollDrop() : null;
+  const loot = won ? rollDrop(mob.level) : null;
   const slotOccupied = loot ? worn.some(item => slotOf(item.item_code) === slotOf(loot.kind)) : false;
   // Preserve the monster's remaining HP after defeat. A healed player
   // resumes the same encounter rather than getting a fresh full-HP monster.
-  const nextMob = won ? makeMonster(nextStage, progress.level) :
+  const nextMob = won ? makeMonster(nextStage,progress.level,currentGround({...p,level:progress.level})) :
     { ...mob, hp: fight.remainingMonsterHp };
   const updatedStamp = p.stamina >= staminaCap(p) ? nowMs : (p.stamina_updated_at || nowMs);
   const nextHpAt = fight.taken > 0 ? nowMs : (p.hp_updated_at || nowMs);
@@ -268,7 +269,7 @@ async function monsterBattle(
         "💚 회복 또는 휴식 후 재도전하세요."
       ];
   const text = [
-    "⚔️ 자동 전투 결과 · STAGE " + p.stage,
+    "⚔️ 자동 전투 · "+currentGround(p).name+" · STAGE " + p.stage,
     "👹 " + mob.name + " Lv." + mob.level +
       " | HP " + mob.hp + "/" + mob.maxHp,
     "",
@@ -285,8 +286,8 @@ async function monsterBattle(
   // Show the monster just fought, not the next stage. The defeat card's HP
   // matches the HP saved to D1 and used when the player returns after healing.
   const cardMonster: MonsterCard = won
-    ? { ...mob, hp: 0, stage: p.stage, cleared: true }
-    : { ...mob, hp: fight.remainingMonsterHp, stage: p.stage, cleared: false };
+    ? { ...mob, hp: 0, stage: p.stage, ground:currentGround(p).name, cleared: true }
+    : { ...mob, hp: fight.remainingMonsterHp, stage: p.stage, ground:currentGround(p).name, cleared: false };
   return { monster: cardMonster, text };
 }
 
