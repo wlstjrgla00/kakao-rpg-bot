@@ -188,6 +188,68 @@ export async function equip(db:D1Database,p:GamePlayer,id:number):Promise<string
 export function saleValue(e:Equipment):number {
  return Math.round(BASE[kindOf(e.item_code)][rarityOf(e.rarity)]*15+e.upgrade_level*25);
 }
+// Pricing is shared with individual selling and computed inside the same SQLite
+// transaction for bulk selling, so the gold reward matches the deleted items.
+function sqlRarityBase(kind:GearKind):string {
+ const values=BASE[kind];
+ return "CASE rarity "+
+   "WHEN 'rare' THEN "+values.rare+" "+
+   "WHEN 'epic' THEN "+values.epic+" "+
+   "WHEN 'legendary' THEN "+values.legendary+" "+
+   "WHEN 'mythic' THEN "+values.mythic+" "+
+   "ELSE "+values.common+" END";
+}
+const sqlGearBase="CASE item_code "+
+  (["dagger","staff","armor","ring"] as GearKind[])
+    .map(kind=>"WHEN '"+kind+"' THEN "+sqlRarityBase(kind)+" ").join("")+
+  "ELSE "+sqlRarityBase("sword")+" END";
+const sqlSaleTotal="COALESCE(SUM(("+sqlGearBase+")*15 + upgrade_level*25),0)";
+export type BulkSaleSummary={count:number;gold:number;newest:number};
+export async function bulkSaleSummary(db:D1Database,playerId:number):Promise<BulkSaleSummary> {
+ const row=await db.prepare(
+   "SELECT COUNT(*) AS count,"+sqlSaleTotal+" AS gold,"+
+   "COALESCE(MAX(id),0) AS newest FROM equipment "+
+   "WHERE player_id=? AND equipped=0"
+ ).bind(playerId).first<BulkSaleSummary>();
+ return {count:row?.count||0,gold:row?.gold||0,newest:row?.newest||0};
+}
+
+export async function sellAll(
+ db:D1Database,p:GamePlayer,expectedVersion:number,expected:BulkSaleSummary
+):Promise<string> {
+ if(p.version!==expectedVersion) {
+   return "⏳ 캐릭터 상태가 변경됐어요. '모두 판매'에서 판매 내용을 다시 확인해 주세요.";
+ }
+ const snapshot=await bulkSaleSummary(db,p.id);
+ if(snapshot.count===0)return "🎒 판매할 미착용 장비가 없어요. 착용 중인 장비는 유지돼요.";
+ if(snapshot.count!==expected.count||snapshot.gold!==expected.gold||snapshot.newest!==expected.newest) {
+   return "⏳ 인벤토리나 판매 가격이 변경됐어요. '모두 판매'에서 다시 확인해 주세요.";
+ }
+ if(!Number.isSafeInteger(snapshot.gold)||snapshot.gold<0||!Number.isSafeInteger(snapshot.count))
+   return "⚠️ 판매 합계를 확인할 수 없어요. 관리자에게 문의해 주세요.";
+ const sumQuery="(SELECT "+sqlSaleTotal+" FROM equipment "+
+   "WHERE player_id=? AND equipped=0)";
+ const out=await db.batch([
+   db.prepare(
+     "UPDATE players SET gold=gold+"+sumQuery+",version=version+1 "+
+     "WHERE id=? AND version=? "+
+     "AND (SELECT COUNT(*) FROM equipment WHERE player_id=? AND equipped=0)=? "+
+     "AND "+sumQuery+"=? "+
+     "AND (SELECT COALESCE(MAX(id),0) FROM equipment WHERE player_id=? AND equipped=0)=?"
+   ).bind(p.id,p.id,expectedVersion,p.id,expected.count,p.id,expected.gold,p.id,expected.newest),
+   db.prepare(
+     "DELETE FROM equipment WHERE player_id=? AND equipped=0 AND changes()=1 "+
+     "AND EXISTS (SELECT 1 FROM players WHERE id=? AND version=?)"
+   ).bind(p.id,p.id,expectedVersion+1)
+ ]);
+ if(out[0].meta.changes!==1||out[1].meta.changes!==snapshot.count)
+   return "⏳ 판매 상태가 변경됐어요. 골드와 인벤토리를 다시 확인해 주세요.";
+ return "✅ 모두 판매 완료!\n"+
+   "📦 판매한 장비: "+snapshot.count+"개\n"+
+   "💰 획득 골드: +"+snapshot.gold.toLocaleString()+"G\n"+
+   "🛡️ 착용 중인 무기·갑옷·반지는 그대로 보관돼요.";
+}
+
 export async function sell(db:D1Database,p:GamePlayer,id:number):Promise<string> {
  const e=await db.prepare("SELECT * FROM equipment WHERE id=? AND player_id=?")
    .bind(id,p.id).first<Equipment>();
