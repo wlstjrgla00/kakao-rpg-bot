@@ -128,7 +128,7 @@ async function load(db: D1Database, botId: string, userKey: string) {
 function info(p: Player) {
   const next = nextPromotion(p);
   const notice = next && p.level >= next.level
-    ? "\\n🎓 " + next.tier + "차 전직 가능! '전직'을 입력하세요." : "";
+    ? "\n🎓 " + next.tier + "차 전직 가능! '전직'을 입력하세요." : "";
   return `🛡️ ${p.nickname}\n${jobName(p)} | 레벨 ${p.level}\n경험치 ${p.exp}/${expNeeded(p.level)} (${(p.exp/expNeeded(p.level)*100).toFixed(1)}%)\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility} | 🧠 지능 ${jobInt(p)}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}` + notice;
 }
 type Monster = { name: string; level: number; hp: number; maxHp: number };
@@ -272,13 +272,13 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       return response("⚠️ 전직 기능 준비 중입니다. Cloudflare D1에 0005 전직 SQL을 적용해 주세요.", ["내정보"]);
     }
     const next = nextPromotion(p);
-    if (!next) return response("👑 3차 전직까지 모두 완료했어요!\\n현재 직업: " + jobName(p));
+    if (!next) return response("👑 3차 전직까지 모두 완료했어요!\n현재 직업: " + jobName(p));
     if (p.level < next.level) return response(
-      "🔒 " + next.tier + "차 전직은 Lv." + next.level + "부터 가능합니다.\\n현재 Lv." + p.level,
+      "🔒 " + next.tier + "차 전직은 Lv." + next.level + "부터 가능합니다.\n현재 Lv." + p.level,
       ["사냥","내정보","스탯"]);
     if (next.tier === 1) return jobCard(
       "🎓 1차 전직 가능! · Lv.20",
-      "전사·도적·마법사 중 직업을 선택해 주세요.\\n⚠️ 전직 확정 시 기존 투자 스탯을 초기화하고 포인트를 전액 돌려줍니다.",
+      "전사·도적·마법사 중 직업을 선택해 주세요.\n⚠️ 전직 확정 시 기존 투자 스탯을 초기화하고 포인트를 전액 돌려줍니다.",
       ["전사","도적","마법사"].map(name=>({label:name,messageText:name+" 선택"}))
     );
     const kind = jobClass(p);
