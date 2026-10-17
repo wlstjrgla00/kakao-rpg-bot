@@ -373,7 +373,13 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     if(!Number.isSafeInteger(page)||page<1||page>100000)
       return response("⚠️ 올바른 인벤토리 페이지를 입력해 주세요.",["인벤토리"]);
     const content=await inventory(db,p,page);
-    const buttons=[{label:"장비",messageText:"장비"},{label:"강화",messageText:"강화"},{label:"사냥",messageText:"사냥"}];
+    const picks=await db.prepare(
+      "SELECT id FROM equipment WHERE player_id=? AND equipped=0 ORDER BY id DESC LIMIT 2 OFFSET ?"
+    ).bind(p.id,(page-1)*8).all<{id:number}>();
+    const buttons=(picks.results||[]).map(item=>({
+      label:"장착 #"+item.id,messageText:"장착 "+item.id
+    }));
+    buttons.push({label:"장비",messageText:"장비"});
     return jobCard("🎒 인벤토리",content,buttons);
   }
   const gearAction=command.match(/^(장착|판매)\s+(\d+)$/);
