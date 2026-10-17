@@ -340,6 +340,50 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     const result = await promote(db,p,chosen);
     return response(result.message,result.ok?["스탯","지능 올리기","힘 올리기","내정보"]:["전직","내정보"]);
   }
+  if (command === "장비") {
+    const item = await equipped(db,p.id);
+    return jobCard("🛡️ 내 장비",
+      (item ? display(item) + "\n" +
+        (item.upgrade_level>=20 ? "🏆 최대 강화 +20 달성" :
+        "💰 다음 강화 비용: "+cost(item.rarity,item.upgrade_level).toLocaleString()+"G\n"+oddsLine(item.upgrade_level))
+        : "착용한 장비가 없어요.\n사냥으로 획득한 첫 장비는 자동으로 착용됩니다.")+
+      "\n💰 보유 골드: "+p.gold.toLocaleString()+"G",
+      [{label:"강화",messageText:"강화"},{label:"인벤토리",messageText:"인벤토리"},{label:"사냥",messageText:"사냥"}]);
+  }
+  if (command === "강화") {
+    const item=await equipped(db,p.id);
+    if(!item)return jobCard("⚒️ 장비 강화","착용 중인 장비가 없어요.\n사냥으로 장비를 획득하세요.",
+      [{label:"인벤토리",messageText:"인벤토리"},{label:"사냥",messageText:"사냥"}]);
+    if(item.upgrade_level>=20)return jobCard("🏆 최대 강화 달성!",display(item)+"\n최대 +20까지만 강화할 수 있어요.",
+      [{label:"장비",messageText:"장비"},{label:"인벤토리",messageText:"인벤토리"}]);
+    return jobCard("⚒️ 장비 강화 +"+item.upgrade_level+" → +"+(item.upgrade_level+1),
+      display(item)+"\n💰 필요 골드 "+cost(item.rarity,item.upgrade_level).toLocaleString()+
+      "G / 보유 "+p.gold.toLocaleString()+"G\n\n"+oddsLine(item.upgrade_level)+
+      "\n\n⚠️ 하락 시 -1강, 파괴 시 장비가 사라집니다. 골드는 결과와 관계없이 소모됩니다.",
+      [{label:"강화 실행",messageText:"강화 실행"},{label:"장비",messageText:"장비"},{label:"인벤토리",messageText:"인벤토리"}]);
+  }
+  if (command === "강화 실행") {
+    const result=await enhance(db,p);
+    return jobCard("⚒️ 강화 결과",result,
+      [{label:"다시 강화",messageText:"강화"},{label:"인벤토리",messageText:"인벤토리"},{label:"사냥",messageText:"사냥"}]);
+  }
+  const inventoryMatch=command.match(/^인벤토리(?:\s+(\d+))?$/);
+  if(inventoryMatch) {
+    const page=inventoryMatch[1]?Number(inventoryMatch[1]):1;
+    if(!Number.isSafeInteger(page)||page<1||page>100000)
+      return response("⚠️ 올바른 인벤토리 페이지를 입력해 주세요.",["인벤토리"]);
+    const content=await inventory(db,p,page);
+    const buttons=[{label:"장비",messageText:"장비"},{label:"강화",messageText:"강화"},{label:"사냥",messageText:"사냥"}];
+    return jobCard("🎒 인벤토리",content,buttons);
+  }
+  const gearAction=command.match(/^(장착|판매)\s+(\d+)$/);
+  if(gearAction) {
+    const id=Number(gearAction[2]);
+    if(!Number.isSafeInteger(id)||id<1)return response("⚠️ 장비 번호가 올바르지 않습니다.",["인벤토리"]);
+    const result=gearAction[1]==="장착"?await equip(db,p,id):await sell(db,p,id);
+    return jobCard(gearAction[1]==="장착"?"🛡️ 장비 변경":"💰 장비 판매",result,
+      [{label:"인벤토리",messageText:"인벤토리"},{label:"장비",messageText:"장비"},{label:"사냥",messageText:"사냥"}]);
+  }
   if (command === "내정보") return response(info(p));
   if (command === "사냥터") {
     if (!hasMonsterSchema(p)) {
