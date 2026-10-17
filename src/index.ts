@@ -47,7 +47,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
   const p = await load(db, botId, userKey);
   if (!p) return response("먼저 '게임시작'을 입력해서 캐릭터를 생성해 주세요.",["게임시작"]);
   if (command === "내정보") return response(info(p));
-  if (command === "도움말") return response(`🎮 사용 가능한 명령어\n${actions.join(" / ")}\n\n사냥에는 스태미나 1이 필요합니다. 연속 실행에는 3초 제한이 있습니다.`);
+  if (command === "도움말") return response(`🎮 사용 가능한 명령어\n${actions.join(" / ")}\n\n사냥에는 스태미나 1이 필요합니다. 연속 실행에는 2초 제한이 있습니다.`);
   if (command === "스탯") return response(`✨ 남은 포인트: ${p.stat_points}\n힘 ${p.strength} / 방어 ${p.defense} / 민첩 ${p.agility}\n레벨업마다 1포인트 획득합니다.`,["힘 올리기","방어 올리기","민첩 올리기","내정보"]);
   if (["힘 올리기", "방어 올리기", "민첩 올리기"].includes(command)) {
     const column = ({"힘 올리기":"strength","방어 올리기":"defense","민첩 올리기":"agility"} as const)[command as "힘 올리기" | "방어 올리기" | "민첩 올리기"];
@@ -58,7 +58,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
   if (command === "사냥") {
     const now = Math.floor(Date.now()/1000);
     if (p.stamina < 1) return response("⚡ 스태미나가 부족합니다. 추후 회복/출석 시스템을 추가할 예정입니다.");
-    if (now - p.last_hunt_at < 3) return response("⏳ 사냥 간격은 최소 3초입니다.");
+    if (now - p.last_hunt_at < 2) return response("⏳ 사냥 간격은 최소 2초입니다.");
     const atk = p.strength * 3 + p.level * 2;
     const monsterHp = 12 + p.stage * 4;
     const won = atk >= monsterHp || Math.random() < Math.min(0.85, atk / (monsterHp * 1.8));
@@ -67,8 +67,8 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     const progress = calcProgress(p, earnedExp);
     // 상태 버전과 쿨다운을 확인하여 오래된 요청의 이중 처리를 차단
     const update = await db.prepare(`UPDATE players SET stamina=stamina-1,gold=gold+?,level=?,exp=?,stat_points=stat_points+?,stage=stage+?,last_hunt_at=?,version=version+1 WHERE id=? AND version=? AND stamina>=1 AND last_hunt_at<=?`)
-      .bind(earnedGold,progress.level,progress.exp,progress.points,won?1:0,now,p.id,p.version,now-3).run();
-    if (update.meta.changes !== 1) return response("⏳ 상태가 변경되었습니다. 3초 뒤 다시 시도해 주세요.");
+      .bind(earnedGold,progress.level,progress.exp,progress.points,won?1:0,now,p.id,p.version,now-2).run();
+    if (update.meta.changes !== 1) return response("⏳ 상태가 변경되었습니다. 잠시 후 다시 시도해 주세요.");
     return response(won
       ? `⚔️ 사냥 승리!\n👹 스테이지 ${p.stage} 몬스터 처치\n💰 +${earnedGold}G | ✨ +${earnedExp} EXP${progress.points ? `\n🎉 레벨업! Lv.${progress.level} (+${progress.points} 스탯포인트)` : ""}\n⚡ 스태미나 -1`
       : `💀 사냥 실패!\n👹 몬스터에게 패배했습니다.\n⚡ 스태미나 -1`);
