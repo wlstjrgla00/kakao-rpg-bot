@@ -74,8 +74,12 @@ export function resolveFight(
     if (dodged) {
       dodges++;
     } else {
-      const base = Math.max(0, Math.ceil(6 + monster.level * 1.6) - defenseReduction(p) - equipment.guard);
-      received = kind === "warrior" && tier >= 1 ? Math.ceil(base * 0.9) : base;
+      // Gradual counterattack growth, but defense and armor still matter.
+      // Cap total mitigation at 80% to prevent permanent zero-damage fights.
+      const base = Math.ceil(10 + monster.level * 1.65);
+      const reduced = Math.max(Math.ceil(base * 0.20),
+        base - defenseReduction(p) - equipment.guard);
+      received = kind === "warrior" && tier >= 1 ? Math.ceil(reduced * 0.9) : reduced;
       received = Math.min(heroHp, received);
       heroHp -= received;
       taken += received;
