@@ -261,10 +261,16 @@ async function monsterBattle(
         attack_bonus:power(loot.rarity,0,loot.kind)
       } as Equipment) + (slotOccupied ? " (인벤토리 보관)" : " (빈 슬롯 자동 장착)")
     : "";
+  const rewardLines = [
+    "💰 " + (p.gold + gold).toLocaleString() + "G" +
+      (won ? " (+" + gold.toLocaleString() + "G 획득)" : " (획득 없음)"),
+    expProgress(progress.level, progress.exp),
+    "✨ 경험치 +" + earnedExp.toLocaleString()
+  ];
   const resultLines = won
     ? [
         "🏆 승리! " + mob.name + " 처치",
-        "💰 +" + gold + "G · ✨ 경험치 +" + earnedExp,
+        ...rewardLines,
         ...(progress.points ? ["🎉 레벨업! 스탯 포인트 +" + progress.points] : []),
         ...(lootLine ? [lootLine] : [])
       ]
@@ -272,10 +278,11 @@ async function monsterBattle(
         "💀 패배! 플레이어가 쓰러졌어요.",
         "👹 몬스터 남은 HP " + fight.remainingMonsterHp + "/" + mob.maxHp,
         "✅ 몬스터 HP가 저장됐어요. 회복 후 이어서 전투할 수 있어요.",
-        "💚 회복 또는 휴식 후 재도전하세요."
+        "💚 회복 또는 휴식 후 재도전하세요.",
+        ...rewardLines
       ];
   const text = [
-    "⚔️ 자동 전투 · "+currentGround(p).name+" · STAGE " + p.stage,
+    "⚔️ 자동 전투 · "+currentGround(p).name,
     "👹 " + mob.name + " Lv." + mob.level +
       " | HP " + mob.hp + "/" + mob.maxHp,
     "",
@@ -284,7 +291,6 @@ async function monsterBattle(
     "",
     "—— 전투 결과 ——",
     ...resultLines,
-    expProgress(progress.level, progress.exp),
     ...(nextPromotion(after) && progress.level >= nextPromotion(after)!.level ? ["🎓 전직 가능! '전직' 명령을 입력하세요."] : []),
     ...(won && p.hunting_ground==="auto" && currentGround(after).id!==currentGround(p).id
        ? ["🏞️ 새 사냥터 해금! "+currentGround(after).name+" (자동 이동)"] : []),
