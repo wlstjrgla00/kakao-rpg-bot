@@ -6,7 +6,7 @@
     {
       "binding": "DB",
       "database_name": "kakao-rpg-db",
-      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+      "database_id": "27dc44aa-7942-46b7-9647-8698379f5a8f"
     }
   ],
   "vars": {
