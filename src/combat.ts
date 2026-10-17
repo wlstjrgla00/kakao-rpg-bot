@@ -71,6 +71,7 @@ export function resolveFight(
 
     const dodged = random() * 100 < dodgeChance(p);
     let received = 0;
+    let heavyHit = false;
     if (dodged) {
       dodges++;
     } else {
@@ -80,6 +81,9 @@ export function resolveFight(
       const reduced = Math.max(Math.ceil(base * 0.20),
         base - defenseReduction(p) - equipment.guard);
       received = kind === "warrior" && tier >= 1 ? Math.ceil(reduced * 0.9) : reduced;
+      // Rare monster heavy attacks add danger without making every hit lethal.
+      heavyHit = random() < 0.10;
+      if (heavyHit) received = Math.ceil(received * 1.5);
       received = Math.min(heroHp, received);
       heroHp -= received;
       taken += received;
@@ -95,7 +99,7 @@ export function resolveFight(
       revived = true;
       skills.push("👑 불굴의 의지 부활");
     }
-    let turnLog = log + " / 반격 " + (dodged ? "회피" : received + " 피해");
+    let turnLog = log + " / 반격 " + (dodged ? "회피" : received + " 피해" + (heavyHit ? " 💥 강타!" : ""));
     if (skills.some(x => x.includes("가시 방패") || x.includes("불굴의"))) {
       turnLog += " [" + skills.filter(x => x.includes("가시 방패") || x.includes("불굴의")).join(", ") + "]";
     }
