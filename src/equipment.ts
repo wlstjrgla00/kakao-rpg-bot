@@ -162,7 +162,7 @@ export async function inventory(db:D1Database,p:GamePlayer,page=1):Promise<strin
  const lines=(result.results||[]).map(e=>
    (e.equipped?"✅ 착용 | ":"📦 보유 | ")+"#"+e.id+" "+display(e));
  return "🎒 인벤토리 "+page+"/"+pages+" ("+number+"개)\n"+lines.join("\n")+
-   "\n\n장착: 장착 12 / 판매: 판매 12\n다음 페이지: 인벤토리 "+(page+1);
+   "\n\n아래 장착 메뉴/판매 메뉴에서 장비를 선택하세요."+(page<pages?"\n다음 페이지: 인벤토리 "+(page+1):"");
 }
 export async function equip(db:D1Database,p:GamePlayer,id:number):Promise<string> {
  const e=await db.prepare("SELECT * FROM equipment WHERE id=? AND player_id=?")
@@ -185,12 +185,15 @@ export async function equip(db:D1Database,p:GamePlayer,id:number):Promise<string
  return "✅ "+SLOT_LABEL[slot]+" 장착 완료!\n"+display(e)+
    "\n같은 슬롯의 기존 장비는 인벤토리에 보관됩니다.";
 }
+export function saleValue(e:Equipment):number {
+ return Math.round(BASE[kindOf(e.item_code)][rarityOf(e.rarity)]*15+e.upgrade_level*25);
+}
 export async function sell(db:D1Database,p:GamePlayer,id:number):Promise<string> {
  const e=await db.prepare("SELECT * FROM equipment WHERE id=? AND player_id=?")
    .bind(id,p.id).first<Equipment>();
  if(!e)return "⚠️ 해당 장비는 인벤토리에 없어요.";
  if(e.equipped)return "⚠️ 착용 중인 장비는 판매할 수 없어요. 다른 장비로 교체해 주세요.";
- const price=Math.round(BASE[kindOf(e.item_code)][rarityOf(e.rarity)]*15+e.upgrade_level*25);
+ const price=saleValue(e);
  const out=await db.batch([
    db.prepare("UPDATE players SET gold=gold+?,version=version+1 WHERE id=? AND version=? "+
      "AND EXISTS(SELECT 1 FROM equipment WHERE id=? AND player_id=? AND equipped=0)")
