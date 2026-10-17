@@ -134,8 +134,10 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       return response("⚠️ 사냥터 개편 준비 중입니다. D1 데이터베이스 업데이트(0003)를 적용해 주세요.", ["사냥","내정보"]);
     }
     const state = await spawnMonster(db, p);
+    const spawned = currentMonster(state);
+    if (!spawned) return response("⏳ 사냥터 상태를 불러오는 중이에요. 다시 시도해 주세요.", ["사냥터","내정보"]);
     return response("🏞️ 현재 사냥터 · 스테이지 " + state.stage + "\n" +
-      monsterView(currentMonster(state)!) + "\n⚔️ '사냥'을 눌러 공격하세요!\n" +
+      monsterView(spawned) + "\n⚔️ '사냥'을 눌러 공격하세요!\n" +
       staminaText(state), ["사냥","사냥터","내정보","출석"]);
   }
   if (command === "출석현황") return response(attendanceInfo(p), ["출석","사냥","내정보"]);
