@@ -10,8 +10,9 @@ import {
   nextPromotion, promotionPreview, promote, hasJobSchema
 } from "./jobs";
 import {
-  type Equipment, equipped, equipmentInfo, inventory, equip, sell, enhance,
-  rollDrop, power, display, cost, oddsLine
+  type Equipment, type GearSlot, SLOT_LABEL,
+  equipped, loadout, bonuses, slotOf, equipmentInfo,
+  inventory, equip, sell, enhance, rollDrop, power, display, gearName, cost, oddsLine
 } from "./equipment";
 
 interface Env {
@@ -183,14 +184,15 @@ async function monsterBattle(
     };
   }
   // One skill call simulates the full fight until either combatant reaches zero HP.
-  const worn = await equipped(db,p.id);
-  const fight = resolveFight({ ...p, player_hp: p.player_hp }, mob, undefined, worn?.attack_bonus || 0);
+  const worn = await loadout(db,p.id);
+  const fight = resolveFight({ ...p, player_hp: p.player_hp }, mob, undefined, bonuses(worn));
   const won = fight.victory;
   const gold = won ? 20 + p.stage * 5 : 0;
   const earnedExp = won ? 30 + p.stage * 6 : 0;
   const progress = calcProgress(p, earnedExp);
   const nextStage = p.stage + (won ? 1 : 0);
   const loot = won ? rollDrop() : null;
+  const slotOccupied = loot ? worn.some(item => slotOf(item.item_code) === slotOf(loot.kind)) : false;
   // Preserve the monster's remaining HP after defeat. A healed player
   // resumes the same encounter rather than getting a fresh full-HP monster.
   const nextMob = won ? makeMonster(nextStage, progress.level) :
@@ -212,9 +214,10 @@ async function monsterBattle(
   // A failed battle CAS cannot create a free item.
   const lootInsert = loot ? db.prepare(
     "INSERT INTO equipment (player_id,item_code,item_name,rarity,attack_bonus,upgrade_level,equipped) " +
-    "SELECT id,'single','장비',?,?,0,? FROM players " +
+    "SELECT id,?,?,?,?,0,? FROM players " +
     "WHERE id=? AND version=? AND last_hunt_at=?"
-  ).bind(loot,power(loot,0),worn?0:1,p.id,p.version+1,nowMs) : null;
+  ).bind(loot.kind,gearName(loot.kind,loot.rarity),loot.rarity,power(loot.rarity,0,loot.kind),
+    slotOccupied?0:1,p.id,p.version+1,nowMs) : null;
   const batch = await db.batch(lootInsert ? [battleUpdate,lootInsert] : [battleUpdate]);
   const result = batch[0];
   if (result.meta.changes !== 1) {
@@ -235,8 +238,10 @@ async function monsterBattle(
       ]
     : fight.logs;
   const lootLine = loot && batch.length > 1 && batch[1].meta.changes === 1
-    ? "🎁 장비 획득! " + display({rarity:loot,upgrade_level:0,attack_bonus:power(loot,0)} as Equipment) +
-      (worn ? " (인벤토리 보관)" : " (자동 장착)")
+    ? "🎁 장비 획득! " + display({
+        item_code:loot.kind,rarity:loot.rarity,upgrade_level:0,
+        attack_bonus:power(loot.rarity,0,loot.kind)
+      } as Equipment) + (slotOccupied ? " (인벤토리 보관)" : " (빈 슬롯 자동 장착)")
     : "";
   const resultLines = won
     ? [
