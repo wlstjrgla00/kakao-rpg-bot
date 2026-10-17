@@ -242,6 +242,7 @@ async function monsterBattle(
     "—— 전투 결과 ——",
     ...resultLines,
     expProgress(progress.level, progress.exp),
+    ...(nextPromotion(after) && progress.level >= nextPromotion(after)!.level ? ["🎓 전직 가능! '전직' 명령을 입력하세요."] : []),
     hpText(after),
     staminaText(after)
   ].join("\n");
@@ -259,7 +260,9 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     await db.prepare("INSERT OR IGNORE INTO players(bot_id,bot_user_key) VALUES (?,?)").bind(botId,userKey).run();
     const player = await load(db, botId, userKey);
     const refreshed = player ? await hydrateHp(db, await hydrateStamina(db, player)) : null;
-    return response(`🎮 카카오 RPG에 오신 것을 환영합니다!\n\n${info(refreshed!)}`);
+    return response(`🎮 카카오 RPG에 오신 것을 환영합니다!\n\n${info(refreshed!)}`,
+      nextPromotion(refreshed!) && refreshed!.level >= nextPromotion(refreshed!)!.level
+        ? ["전직","사냥","내정보","스탯","출석"] : ["사냥","내정보","스탯","출석"]);
   }
   const existing = await load(db, botId, userKey);
   if (!existing) return response("먼저 '게임시작'을 입력해서 캐릭터를 생성해 주세요.",["게임시작"]);
