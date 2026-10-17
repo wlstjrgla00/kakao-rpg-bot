@@ -1,0 +1,32 @@
+CREATE TABLE IF NOT EXISTS players (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id TEXT NOT NULL,
+  bot_user_key TEXT NOT NULL,
+  nickname TEXT NOT NULL DEFAULT '모험가',
+  level INTEGER NOT NULL DEFAULT 1 CHECK(level >= 1),
+  exp INTEGER NOT NULL DEFAULT 0 CHECK(exp >= 0),
+  gold INTEGER NOT NULL DEFAULT 500 CHECK(gold >= 0),
+  strength INTEGER NOT NULL DEFAULT 5,
+  defense INTEGER NOT NULL DEFAULT 5,
+  agility INTEGER NOT NULL DEFAULT 5,
+  stat_points INTEGER NOT NULL DEFAULT 0 CHECK(stat_points >= 0),
+  stamina INTEGER NOT NULL DEFAULT 20 CHECK(stamina >= 0),
+  stage INTEGER NOT NULL DEFAULT 1,
+  last_hunt_at INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(bot_id, bot_user_key)
+);
+CREATE INDEX IF NOT EXISTS idx_players_rank ON players(level DESC, exp DESC);
+CREATE TABLE IF NOT EXISTS equipment (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  item_code TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  rarity TEXT NOT NULL,
+  attack_bonus INTEGER NOT NULL DEFAULT 0,
+  upgrade_level INTEGER NOT NULL DEFAULT 0,
+  equipped INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_equipment_player ON equipment(player_id);

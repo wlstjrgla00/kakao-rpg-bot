@@ -1,0 +1,15 @@
+{
+  "name": "kakao-rpg-bot",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-17",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kakao-rpg-db",
+      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+    }
+  ],
+  "vars": {
+    "EXPECTED_BOT_ID": "REPLACE_WITH_KAKAO_BOT_ID"
+  }
+}
