@@ -144,9 +144,10 @@ async function monsterBattle(
   const earnedExp = won ? 30 + p.stage * 6 : 0;
   const progress = calcProgress(p, earnedExp);
   const nextStage = p.stage + (won ? 1 : 0);
-  // Loss resets current monster's HP for the next encounter.
+  // Preserve the monster's remaining HP after defeat. A healed player
+  // resumes the same encounter rather than getting a fresh full-HP monster.
   const nextMob = won ? makeMonster(nextStage, progress.level) :
-    { ...mob, hp: mob.maxHp };
+    { ...mob, hp: fight.remainingMonsterHp };
   const updatedStamp = p.stamina >= staminaCap(p) ? nowMs : (p.stamina_updated_at || nowMs);
   const nextHpAt = fight.taken > 0 ? nowMs : (p.hp_updated_at || nowMs);
   const sql =
@@ -185,10 +186,8 @@ async function monsterBattle(
       ]
     : [
         "💀 패배! 플레이어가 쓰러졌어요.",
-        "👹 패배 순간 몬스터 남은 HP " +
-          fight.remainingMonsterHp + "/" + mob.maxHp,
-        "🔄 재도전 시 몬스터 HP는 " + mob.maxHp +
-          "/" + mob.maxHp + "로 초기화됩니다.",
+        "👹 몬스터 남은 HP " + fight.remainingMonsterHp + "/" + mob.maxHp,
+        "✅ 몬스터 HP가 저장됐어요. 회복 후 이어서 전투할 수 있어요.",
         "💚 회복 또는 휴식 후 재도전하세요."
       ];
   const text = [
@@ -205,9 +204,8 @@ async function monsterBattle(
     hpText(after),
     staminaText(after)
   ].join("\n");
-  // The displayed card belongs to the monster just fought, not the next stage.
-  // When defeated, display HP at the moment combat ended. The database reset
-  // for the next attempt is unchanged.
+  // Show the monster just fought, not the next stage. The defeat card's HP
+  // matches the HP saved to D1 and used when the player returns after healing.
   const cardMonster: MonsterCard = won
     ? { ...mob, hp: 0, stage: p.stage, cleared: true }
     : { ...mob, hp: fight.remainingMonsterHp, stage: p.stage, cleared: false };
