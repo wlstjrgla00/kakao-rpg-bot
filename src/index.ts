@@ -69,6 +69,25 @@ function response(
     }
   }, { headers: { "Cache-Control": "no-store" } });
 }
+function healCard(title: string, description: string) {
+  return Response.json({
+    version: "2.0",
+    template: {
+      outputs: [{
+        basicCard: {
+          title,
+          description,
+          buttonLayout: "horizontal",
+          buttons: [
+            { label: "회복", action: "message", messageText: "회복" },
+            { label: "사냥", action: "message", messageText: "사냥" }
+          ]
+        }
+      }]
+    }
+  }, { headers: { "Cache-Control": "no-store" } });
+}
+
 function expNeeded(level: number) { return level * 100; }
 function expProgress(level: number, exp: number) {
   const target = expNeeded(level);
@@ -246,8 +265,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     }
     const cap = maxHp(p);
     if (p.player_hp >= cap) {
-      return response("💚 이미 체력이 가득합니다!\n❤️ HP " + cap + "/" + cap,
-        ["사냥", "내정보", "휴식"]);
+      return healCard("💚 이미 체력이 가득합니다!", "❤️ 현재 체력 " + cap + "/" + cap + "\n사냥을 계속할 수 있어요!");
     }
     // Restore 45% of the CURRENT maximum HP, rounded up. Never exceed the cap.
     const healAmount = Math.ceil(cap * 0.45);
@@ -259,16 +277,15 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       "version=version+1 WHERE id=? AND version=? AND player_hp<?"
     ).bind(cap, healAmount, healAmount, cap, now, p.id, p.version, cap).run();
     if (update.meta.changes !== 1) {
-      return response("⏳ 체력 상태가 변경됐어요. 다시 확인한 후 회복해 주세요.", ["내정보", "회복"]);
+      return healCard("⏳ 체력 상태가 변경됐어요", "회복 버튼을 눌러 다시 시도해 주세요.");
     }
     const healed = p.player_hp + actualHeal;
-    return response(
-      "💚 회복 성공!\n" +
+    return healCard(
+      "💚 회복 성공!",
       "💊 최대 체력의 45% 회복 (" + healAmount + " HP 기준)\n" +
       "❤️ 실제 회복량 +" + actualHeal + " HP\n" +
       "❤️ 현재 체력 " + healed + "/" + cap +
-      "\n\n사냥을 계속할 수 있어요!",
-      ["사냥", "회복", "내정보", "스탯", "휴식"]
+      "\n\n사냥을 계속할 수 있어요!"
     );
   }
   if (command === "휴식") return response("🌿 휴식 중에도 스태미나는 자동으로 회복돼요.\n" +
