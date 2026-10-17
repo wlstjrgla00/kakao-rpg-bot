@@ -1,4 +1,5 @@
 import type { GamePlayer } from "./features";
+import { jobInt, jobName } from "./jobs";
 
 const HEAL_INTERVAL_MS = 5 * 60 * 1000;
 const HEAL_AMOUNT = 10;
@@ -34,6 +35,8 @@ export function statText(p:GamePlayer): string {
     "💪 힘 "+p.strength+" → 공격력 "+attackPower(p)+" (+1당 공격력 +3)",
     "🛡️ 방어 "+p.defense+" → 반격 피해 -"+defenseReduction(p)+", 최대 HP "+maxHp(p)+" (+1당 HP +8)",
     "💨 민첩 "+p.agility+" → 치명타 "+critChance(p)+"%, 회피 "+dodgeChance(p)+"% (+1당 각각 +1%p/+2%p, 상한 45%/40%)",
+    "🧠 지능 "+jobInt(p)+" → 마법 피해 증가 (+1당 마법 공격력 +4)",
+    "🎓 직업: "+jobName(p),
     hasHpSchema(p) ? hpText(p) : "⚠️ 체력·방어·회피 전투 효과는 DB 0004 적용 뒤 활성화",
     "",
     "레벨업 때마다 스탯 포인트 +1",
