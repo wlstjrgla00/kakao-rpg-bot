@@ -14,6 +14,8 @@ import {
   equipped, loadout, bonuses, slotOf, equipmentInfo,
   inventory, equip, sell, sellAll, bulkSaleSummary, enhance, rollDrop, power, display, gearName, cost, oddsLine, saleValue
 } from "./equipment";
+import {GROUNDS,currentGround,suggestedGround,targetMonsterLevel,
+  groundList,hasGroundSchema,rewardForMonster} from "./hunting-grounds";
 
 interface Env {
   DB: D1Database;
@@ -25,7 +27,7 @@ type KakaoPayload = {
   bot?: { id?: string };
   userRequest?: { user?: { id?: string }, utterance?: string };
 };
-const actions = ["게임시작", "내정보", "전직", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "지능 올리기", "장비", "인벤토리", "장착 메뉴", "판매 메뉴", "강화", "랭킹", "도움말"];
+const actions = ["게임시작", "내정보", "전직", "사냥", "탐험", "사냥터", "사냥터 목록", "추천 사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "지능 올리기", "장비", "인벤토리", "장착 메뉴", "판매 메뉴", "강화", "랭킹", "도움말"];
 
 type MonsterCard = {
   name: string;
@@ -33,6 +35,7 @@ type MonsterCard = {
   hp: number;
   maxHp: number;
   stage: number;
+  ground?: string;
   cleared?: boolean;
 };
 function monsterCard(monster: MonsterCard) {
@@ -45,7 +48,7 @@ function monsterCard(monster: MonsterCard) {
     basicCard: {
       title: "Lv." + monster.level + " " + name,
       description:
-        "🗺️ 스테이지 " + monster.stage + " · 등급: 일반\n" +
+        "🗺️ " + (monster.ground || "사냥터") + " · 누적 "+(monster.stage-1)+"회\n" +
         statusText,
       thumbnail: {
         imageUrl: "https://kakao-rpg-bot.bongham.workers.dev/monsters/" + slug + ".jpg",
@@ -145,39 +148,42 @@ type Monster = { name: string; level: number; hp: number; maxHp: number };
 
 const MONSTERS = ["🟢 슬라임", "👺 숲 고블린", "🐺 야생 늑대", "💀 암흑 해골", "🪨 마력 골렘", "⚔️ 심연의 기사"];
 
-function makeMonster(stage: number, playerLevel: number): Monster {
-  const level = Math.max(1, Math.round((stage + playerLevel) / 2));
-  const hp = 30 + level * 9 + stage * 3;
-  return {
-    name: MONSTERS[(Math.max(1, stage) - 1) % MONSTERS.length],
-    level, hp, maxHp: hp
+function makeMonster(stage:number,playerLevel:number,ground=currentGround({level:playerLevel,hunting_ground:"auto"} as Player)):Monster {
+  // Stage is retained only as a lifetime clear counter, never a combat scale.
+  const level=targetMonsterLevel(playerLevel,ground);
+  const hp=Math.ceil(28+level*6.2);
+  return {name:MONSTERS[ground.monsterIndex],level,hp,maxHp:hp};
+}
+function currentMonster(p:Player):Monster|null {
+  if(!p.monster_name||!p.monster_hp||!p.monster_max_hp||!p.monster_level)return null;
+  return {name:p.monster_name,hp:p.monster_hp,maxHp:p.monster_max_hp,level:p.monster_level};
+}
+const MONSTER_SLUGS=["slime","goblin","wolf","skeleton","golem","knight"];
+function monsterSlug(name:string):string {
+  const index=MONSTERS.indexOf(name);
+  return MONSTER_SLUGS[index<0?0:index];
+}
+function monsterView(m:Monster):string {
+  return "👹 "+m.name+" | Lv."+m.level+"\n❤️ 몬스터 HP: "+m.hp+"/"+m.maxHp;
+}
+async function spawnMonster(db:D1Database,p:Player):Promise<Player> {
+  if(!hasGroundSchema(p))return p;
+  const expected=makeMonster(p.stage,p.level,currentGround(p));
+  const existing=currentMonster(p);
+  // Keep wounded foes after defeat. Old stage-scaled or wrong-zone enemies
+  // are automatically replaced once after migration with fair leveled mobs.
+  if(existing && existing.name===expected.name &&
+     Math.abs(existing.level-expected.level)<=2)return p;
+  const result=await db.prepare(
+    "UPDATE players SET monster_name=?,monster_level=?,monster_hp=?,monster_max_hp=?,"+
+    "version=version+1 WHERE id=? AND version=?"
+  ).bind(expected.name,expected.level,expected.hp,expected.maxHp,p.id,p.version).run();
+  if(result.meta.changes===1)return {
+    ...p,monster_name:expected.name,monster_level:expected.level,
+    monster_hp:expected.hp,monster_max_hp:expected.maxHp,version:p.version+1
   };
-}
-function currentMonster(p: Player): Monster | null {
-  if (!p.monster_name || !p.monster_hp || !p.monster_max_hp || !p.monster_level) return null;
-  return { name: p.monster_name, hp: p.monster_hp, maxHp: p.monster_max_hp, level: p.monster_level };
-}
-const MONSTER_SLUGS = ["slime","goblin","wolf","skeleton","golem","knight"];
-function monsterSlug(name: string): string {
-  const index = MONSTERS.indexOf(name);
-  return MONSTER_SLUGS[index < 0 ? 0 : index];
-}
-function monsterView(m: Monster): string {
-  return "👹 " + m.name + " | Lv." + m.level +
-    "\n❤️ 몬스터 HP: " + m.hp + "/" + m.maxHp;
-}
-async function spawnMonster(db: D1Database, p: Player): Promise<Player> {
-  if (currentMonster(p)) return p;
-  const mob = makeMonster(p.stage, p.level);
-  const result = await db.prepare(
-    "UPDATE players SET monster_name=?,monster_level=?,monster_hp=?,monster_max_hp=?," +
-    "version=version+1 WHERE id=? AND version=? AND (monster_hp<=0 OR monster_name IS NULL)"
-  ).bind(mob.name, mob.level, mob.hp, mob.maxHp, p.id, p.version).run();
-  if (result.meta.changes === 1) return {
-    ...p, monster_name: mob.name, monster_level: mob.level, monster_hp: mob.hp,
-    monster_max_hp: mob.maxHp, version: p.version + 1
-  };
-  return (await db.prepare("SELECT * FROM players WHERE id=?").bind(p.id).first<Player>()) || p;
+  return (await db.prepare("SELECT * FROM players WHERE id=?")
+    .bind(p.id).first<Player>())||p;
 }
 async function monsterBattle(
   db: D1Database, p: Player, nowMs: number
