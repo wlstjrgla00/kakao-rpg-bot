@@ -381,8 +381,17 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     const buttons=(picks.results||[]).map(item=>({
       label:"장착 #"+item.id,messageText:"장착 "+item.id
     }));
-    buttons.push({label:"장비",messageText:"장비"});
+    buttons.push({label:"최고 장비 장착",messageText:"최고 장비 장착"});
     return jobCard("🎒 인벤토리",content,buttons);
+  }
+  if (command === "최고 장비 장착") {
+    const best=await db.prepare(
+      "SELECT id FROM equipment WHERE player_id=? ORDER BY attack_bonus DESC,id DESC LIMIT 1"
+    ).bind(p.id).first<{id:number}>();
+    if(!best)return response("🎒 인벤토리에 장비가 없어요. 사냥으로 장비를 획득해 주세요.",["사냥","인벤토리"]);
+    const result=await equip(db,p,best.id);
+    return jobCard("🛡️ 최고 장비 자동 장착",result,
+      [{label:"장비",messageText:"장비"},{label:"인벤토리",messageText:"인벤토리"},{label:"강화",messageText:"강화"}]);
   }
   const gearAction=command.match(/^(장착|판매)\s+(\d+)$/);
   if(gearAction) {
