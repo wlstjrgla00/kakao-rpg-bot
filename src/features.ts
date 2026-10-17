@@ -23,6 +23,9 @@ export interface GamePlayer {
   monster_max_hp?: number;
   player_hp?: number;
   hp_updated_at?: number;
+  job_class?: string;
+  job_tier?: number;
+  intelligence?: number;
 }
 
 const STAMINA_CAP = 100;
