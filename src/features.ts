@@ -26,6 +26,7 @@ export interface GamePlayer {
   job_class?: string;
   job_tier?: number;
   intelligence?: number;
+  hunting_ground?: string;
 }
 
 const STAMINA_CAP = 100;
