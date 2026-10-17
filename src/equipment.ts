@@ -72,7 +72,8 @@ export function effect(e:Equipment):string {
  const n=e.attack_bonus,kind=kindOf(e.item_code);
  if(kind==="armor")return "받는 피해 -"+n;
  if(kind==="ring")return "공격 +"+Math.ceil(n/2)+" / 치명타 +"+Math.min(12,Math.ceil(n/8))+"%p";
- if(kind==="staff")return "공격·마법 +"+n;
+ if(kind==="staff")return "공격 +"+n+" / 마법 스킬 +"+Math.ceil(n/3);
+ if(kind==="dagger")return "공격 +"+n+" / 치명타 +4%p";
  return "공격 +"+n;
 }
 export function display(e:Equipment):string {
@@ -129,15 +130,17 @@ export async function loadout(db:D1Database,id:number):Promise<Equipment[]> {
    .bind(id).all<Equipment>();
  return result.results||[];
 }
-export function bonuses(items:Equipment[]):{attack:number;guard:number;crit:number} {
- let attack=0,guard=0,crit=0;
+export function bonuses(items:Equipment[]):{attack:number;guard:number;crit:number;magic:number} {
+ let attack=0,guard=0,crit=0,magic=0;
  for(const e of items){
    const kind=kindOf(e.item_code),n=e.attack_bonus;
    if(kind==="armor")guard+=n;
    else if(kind==="ring"){attack+=Math.ceil(n/2);crit+=Math.min(12,Math.ceil(n/8));}
+   else if(kind==="dagger"){attack+=n;crit+=4;}
+   else if(kind==="staff"){attack+=n;magic+=Math.ceil(n/3);}
    else attack+=n;
  }
- return {attack,guard,crit};
+ return {attack,guard,crit,magic};
 }
 export async function equipmentInfo(db:D1Database,p:GamePlayer):Promise<string> {
  const items=await loadout(db,p.id);
