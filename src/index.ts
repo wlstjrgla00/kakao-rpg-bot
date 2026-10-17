@@ -367,14 +367,18 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     staminaText(p) + "\n" + hpText(p) + "\n스태미나는 10분마다 1, HP는 5분마다 10 회복", ["사냥","회복","출석","내정보"]);
   if (command === "도움말") return response(`🎮 사용 가능한 명령어\n${actions.join(" / ")}\n\n사냥에는 스태미나 1이 필요합니다. 연속 실행에는 1초 제한이 있습니다. 스태미나는 10분마다 1씩 자동 회복합니다. 출석은 한국시간 매일 1회 가능합니다. 회복은 사용할 때마다 최대 HP의 45%를 보충합니다.`);
   if (command === "스탯") return response(
-    statText(p), ["힘 올리기","방어 올리기","민첩 올리기","내정보"]
+    statText(p), ["힘 올리기","방어 올리기","민첩 올리기","지능 올리기","전직"]
   );
-  if (["힘 올리기", "방어 올리기", "민첩 올리기"].includes(command)) {
+  if (["힘 올리기", "방어 올리기", "민첩 올리기", "지능 올리기"].includes(command)) {
     const column = ({
       "힘 올리기":"strength",
       "방어 올리기":"defense",
-      "민첩 올리기":"agility"
-    } as const)[command as "힘 올리기" | "방어 올리기" | "민첩 올리기"];
+      "민첩 올리기":"agility",
+      "지능 올리기":"intelligence"
+    } as const)[command as "힘 올리기" | "방어 올리기" | "민첩 올리기" | "지능 올리기"];
+    if (column === "intelligence" && !hasJobSchema(p)) {
+      return response("⚠️ 지능 스탯은 D1 전직 업데이트(0005)가 필요합니다.",["스탯"]);
+    }
     if (p.stat_points <= 0) return response(
       "✨ 남은 스탯 포인트가 없어요. 사냥으로 레벨업해 주세요.\n" + statText(p),
       ["스탯","사냥"]
@@ -391,7 +395,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     );
     const fresh = await load(db,botId,userKey);
     return response("✅ " + command + " 성공! (포인트 -1)\n\n" + statText(fresh!),
-      ["힘 올리기","방어 올리기","민첩 올리기","사냥","내정보"]
+      ["힘 올리기","방어 올리기","민첩 올리기","지능 올리기","사냥","전직"]
     );
   }
   if (command === "사냥" || command === "탐험") {
