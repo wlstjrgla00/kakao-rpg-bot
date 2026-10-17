@@ -48,7 +48,7 @@ function monsterCard(monster: MonsterCard) {
     basicCard: {
       title: "Lv." + monster.level + " " + name,
       description:
-        "🗺️ " + (monster.ground || "사냥터") + " · 누적 "+(monster.stage-1)+"회\n" +
+        "🗺️ " + (monster.ground || "사냥터") + " · 누적 "+(monster.cleared?monster.stage:monster.stage-1)+"회\n" +
         statusText,
       thumbnail: {
         imageUrl: "https://kakao-rpg-bot.bongham.workers.dev/monsters/" + slug + ".jpg",
