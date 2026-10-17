@@ -5,6 +5,10 @@ import {
 import { hasHpSchema, hpText, maxHp, statText, hydrateHp } from "./stats";
 import { resolveFight } from "./combat";
 import { MONSTER_IMAGES } from "./monster-images";
+import {
+  type BaseClass, jobName, jobClass, jobTier, jobInt,
+  nextPromotion, promotionPreview, promote, hasJobSchema
+} from "./jobs";
 
 interface Env {
   DB: D1Database;
@@ -16,7 +20,7 @@ type KakaoPayload = {
   bot?: { id?: string };
   userRequest?: { user?: { id?: string }, utterance?: string };
 };
-const actions = ["게임시작", "내정보", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "랭킹", "도움말"];
+const actions = ["게임시작", "내정보", "전직", "사냥", "탐험", "사냥터", "출석", "출석현황", "휴식", "회복", "스탯", "힘 올리기", "방어 올리기", "민첩 올리기", "지능 올리기", "랭킹", "도움말"];
 
 type MonsterCard = {
   name: string;
@@ -88,6 +92,21 @@ function healCard(title: string, description: string) {
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
+function jobCard(title: string, description: string, buttons: Array<{label:string; messageText:string}>) {
+  return Response.json({
+    version:"2.0",
+    template: {
+      outputs:[{textCard: {
+        title, description:description.slice(0, 950),
+        buttonLayout:"vertical",
+        buttons:buttons.slice(0,3).map(b=>({
+          label:b.label, action:"message", messageText:b.messageText
+        }))
+      }}],
+      quickReplies:[{label:"스탯",action:"message",messageText:"스탯"}]
+    }
+  }, {headers:{"Cache-Control":"no-store"}});
+}
 function expNeeded(level: number) { return level * 100; }
 function expProgress(level: number, exp: number) {
   const target = expNeeded(level);
@@ -107,7 +126,10 @@ async function load(db: D1Database, botId: string, userKey: string) {
     .bind(botId, userKey).first<Player>();
 }
 function info(p: Player) {
-  return `🛡️ ${p.nickname}\n레벨 ${p.level} | 경험치 ${p.exp}/${expNeeded(p.level)} (${(p.exp/expNeeded(p.level)*100).toFixed(1)}%)\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}`;
+  const next = nextPromotion(p);
+  const notice = next && p.level >= next.level
+    ? "\\n🎓 " + next.tier + "차 전직 가능! '전직'을 입력하세요." : "";
+  return `🛡️ ${p.nickname}\n${jobName(p)} | 레벨 ${p.level}\n경험치 ${p.exp}/${expNeeded(p.level)} (${(p.exp/expNeeded(p.level)*100).toFixed(1)}%)\n💰 ${p.gold.toLocaleString()}G | ${staminaText(p)}\n${hpText(p)}\n💪 힘 ${p.strength} | 🛡️ 방어 ${p.defense} | 💨 민첩 ${p.agility} | 🧠 지능 ${jobInt(p)}\n✨ 남은 스탯포인트 ${p.stat_points}\n🗺️ 진행 스테이지 ${p.stage}` + notice;
 }
 type Monster = { name: string; level: number; hp: number; maxHp: number };
 
