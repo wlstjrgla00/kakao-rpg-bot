@@ -372,32 +372,50 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
   if (command === "스탯") return response(
     statText(p), ["힘 올리기","방어 올리기","민첩 올리기","지능 올리기","전직"]
   );
-  if (["힘 올리기", "방어 올리기", "민첩 올리기", "지능 올리기"].includes(command)) {
+  // "힘 올리기" remains a 1-point action; "힘 올리기 24" spends 24
+  // points in a single atomic D1 update. All four attributes are supported.
+  const statMatch = command.match(/^(힘|방어|민첩|지능)\\s+올리기(?:\\s+(\\S+))?$/);
+  if (statMatch) {
+    const statName = statMatch[1];
     const column = ({
-      "힘 올리기":"strength",
-      "방어 올리기":"defense",
-      "민첩 올리기":"agility",
-      "지능 올리기":"intelligence"
-    } as const)[command as "힘 올리기" | "방어 올리기" | "민첩 올리기" | "지능 올리기"];
-    if (column === "intelligence" && !hasJobSchema(p)) {
-      return response("⚠️ 지능 스탯은 D1 전직 업데이트(0005)가 필요합니다.",["스탯"]);
+      "힘": "strength", "방어": "defense",
+      "민첩": "agility", "지능": "intelligence"
+    } as Record<string, "strength" | "defense" | "agility" | "intelligence">)[statName];
+    const countText = statMatch[2];
+    if (countText !== undefined && !/^\\d{1,8}$/.test(countText)) {
+      return response("⚠️ 스탯 개수는 1 이상의 정수로 입력해 주세요.\\n예: 힘 올리기 24", ["스탯"]);
     }
-    if (p.stat_points <= 0) return response(
-      "✨ 남은 스탯 포인트가 없어요. 사냥으로 레벨업해 주세요.\n" + statText(p),
-      ["스탯","사냥"]
-    );
-    // +8 HP on defense allocation if the optional HP migration was installed.
+    const amount = countText === undefined ? 1 : Number(countText);
+    if (!Number.isSafeInteger(amount) || amount < 1) {
+      return response("⚠️ 스탯은 1개 이상 올려야 해요.\\n예: 힘 올리기 24", ["스탯"]);
+    }
+    if (column === "intelligence" && !hasJobSchema(p)) {
+      return response("⚠️ 지능 스탯은 D1 전직 업데이트(0005)가 필요합니다.", ["스탯"]);
+    }
+    if (p.stat_points < amount) {
+      return response(
+        "⚠️ 스탯 포인트가 부족합니다.\\n" +
+        "✨ 보유 " + p.stat_points + "P / 요청 " + amount + "P\\n" +
+        "포인트가 부족하면 아무것도 변경되지 않아요.",
+        ["스탯","사냥"]
+      );
+    }
+    // Defense increases both maximum and current HP by 8 per point.
     const heal = column === "defense" && hasHpSchema(p);
-    const sql = "UPDATE players SET " + column + "=" + column + "+1," +
-      "stat_points=stat_points-1,version=version+1" +
-      (heal ? ",player_hp=player_hp+8" : "") +
-      " WHERE id=? AND version=? AND stat_points>0";
-    const result = await db.prepare(sql).bind(p.id,p.version).run();
+    const sql = "UPDATE players SET " + column + "=" + column + "+?," +
+      "stat_points=stat_points-?,version=version+1" +
+      (heal ? ",player_hp=player_hp+?" : "") +
+      " WHERE id=? AND version=? AND stat_points>=?";
+    const result = await db.prepare(sql).bind(
+      amount, amount, ...(heal ? [amount * 8] : []), p.id, p.version, amount
+    ).run();
     if (result.meta.changes !== 1) return response(
       "⏳ 포인트 상태가 바뀌었어요. 스탯을 다시 확인해 주세요.", ["스탯"]
     );
     const fresh = await load(db,botId,userKey);
-    return response("✅ " + command + " 성공! (포인트 -1)\n\n" + statText(fresh!),
+    return response(
+      "✅ " + statName + " +" + amount + " 적용! (스탯 포인트 -" + amount + ")\\n\\n" +
+      statText(fresh!),
       ["힘 올리기","방어 올리기","민첩 올리기","지능 올리기","사냥","전직"]
     );
   }
