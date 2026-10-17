@@ -374,7 +374,9 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
       return response("⚠️ 올바른 인벤토리 페이지를 입력해 주세요.",["인벤토리"]);
     const content=await inventory(db,p,page);
     const picks=await db.prepare(
-      "SELECT id FROM equipment WHERE player_id=? AND equipped=0 ORDER BY id DESC LIMIT 2 OFFSET ?"
+      "SELECT id FROM (SELECT id,equipped FROM equipment WHERE player_id=? " +
+      "ORDER BY equipped DESC,id DESC LIMIT 8 OFFSET ?) AS page_items " +
+      "WHERE equipped=0 LIMIT 2"
     ).bind(p.id,(page-1)*8).all<{id:number}>();
     const buttons=(picks.results||[]).map(item=>({
       label:"장착 #"+item.id,messageText:"장착 "+item.id
