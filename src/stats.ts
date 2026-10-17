@@ -21,14 +21,10 @@ export function dodgeChance(p: GamePlayer): number {
 export function defenseReduction(p: GamePlayer): number {
   return p.defense * 2;
 }
-export function hpText(p: GamePlayer, now=Date.now()): string {
+export function hpText(p: GamePlayer): string {
   if (!hasHpSchema(p)) return "❤️ 체력 시스템 준비 중 (DB 0004 적용 필요)";
-  const cap=maxHp(p);
-  if(p.player_hp>=cap) return "❤️ 체력 " + Math.min(p.player_hp, cap) + "/" + cap;
-  const elapsed=Math.max(0,now-p.hp_updated_at);
-  const secs=Math.ceil((HEAL_INTERVAL_MS - elapsed % HEAL_INTERVAL_MS)/1000);
-  return "❤️ 체력 "+p.player_hp+"/"+cap+" (5분마다 +10, 다음 회복 "+
-    Math.floor(secs/60)+"분 "+(secs%60)+"초)";
+  const cap = maxHp(p);
+  return "❤️ 체력 " + Math.min(p.player_hp, cap) + "/" + cap;
 }
 export function statText(p:GamePlayer): string {
   return [
