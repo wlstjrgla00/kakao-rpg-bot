@@ -94,14 +94,17 @@ export default {
       console.warn("Kakao skill payload validation failed", { reason: "INVALID_JSON" });
       return response("⚠️ 요청 데이터 형식을 읽을 수 없습니다. [INVALID_JSON]", ["게임시작"]);
     }
-    const botId = data?.bot?.id;
+    // Each Worker serves exactly one Kakao bot. Authentication is enforced
+    // by KAKAO_SKILL_KEY, while the configured bot ID remains the stable
+    // database namespace for both builder tests and the live channel.
+    // Kakao may supply a distinct bot.id for a test environment.
+    const botId = env.EXPECTED_BOT_ID?.trim();
     const userKey = data?.userRequest?.user?.id;
-    const command = data?.userRequest?.utterance?.trim();
+    const utterance = data?.userRequest?.utterance;
+    const command = typeof utterance === "string" ? utterance.trim() : "";
     const rejectReason =
-      !botId ? "BOT_ID_MISSING" :
-      botId !== env.EXPECTED_BOT_ID ? "BOT_ID_MISMATCH" :
-      !userKey ? "USER_ID_MISSING" :
-      typeof userKey !== "string" ? "USER_ID_INVALID" :
+      !botId || botId === "REPLACE_WITH_KAKAO_BOT_ID" ? "BOT_CONFIG_MISSING" :
+      typeof userKey !== "string" || !userKey ? "USER_ID_MISSING" :
       userKey.length > 300 ? "USER_ID_TOO_LONG" :
       !command ? "UTTERANCE_MISSING" :
       command.length > 100 ? "UTTERANCE_TOO_LONG" : null;
