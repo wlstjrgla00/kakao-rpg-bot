@@ -80,17 +80,35 @@ export function display(e:Equipment):string {
  const kind=kindOf(e.item_code),r=rarityOf(e.rarity);
  return LABEL[r]+" "+gearName(kind,r)+" +"+e.upgrade_level+" ("+effect(e)+")";
 }
-export function dropRarity(random=Math.random):Rarity {
- const n=random()*100;
- return n<60?"common":n<85?"rare":n<95?"epic":n<99?"legendary":"mythic";
+// Eligible tiers accumulate as monster level increases. Weights are normalized
+// among eligible rarities: low-level monsters cannot drop locked high-tier gear.
+export const RARITY_UNLOCK_LEVEL: Record<Rarity,number> = {
+ common:1,rare:20,epic:100,legendary:200,mythic:500
+};
+const DROP_WEIGHTS: Record<Rarity,number> = {
+ common:60,rare:25,epic:10,legendary:4,mythic:1
+};
+export function eligibleRarities(monsterLevel:number):Rarity[] {
+ return RARITIES.filter(r=>monsterLevel>=RARITY_UNLOCK_LEVEL[r]);
+}
+export function dropRarity(monsterLevel:number,random=Math.random):Rarity {
+ const eligible=eligibleRarities(monsterLevel);
+ const total=eligible.reduce((sum,r)=>sum+DROP_WEIGHTS[r],0);
+ if(!total)return "common";
+ let ticket=Math.min(0.999999999999,Math.max(0,random()))*total;
+ for(const r of eligible){
+   ticket-=DROP_WEIGHTS[r];
+   if(ticket<0)return r;
+ }
+ return eligible[eligible.length-1];
 }
 export function dropKind(random=Math.random):GearKind {
  const n=random()*100;
  return n<22?"sword":n<40?"dagger":n<60?"staff":n<84?"armor":"ring";
 }
 export type DroppedGear={kind:GearKind;rarity:Rarity};
-export function rollDrop(random=Math.random):DroppedGear|null {
- return random()<0.18?{kind:dropKind(random),rarity:dropRarity(random)}:null;
+export function rollDrop(monsterLevel:number,random=Math.random):DroppedGear|null {
+ return random()<0.18?{kind:dropKind(random),rarity:dropRarity(monsterLevel,random)}:null;
 }
 export function cost(rarity:string,level:number):number {
  return Math.round((80+35*(level+1)*(level+1))*RATE[rarityOf(rarity)]);
