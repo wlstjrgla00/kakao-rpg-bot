@@ -147,31 +147,48 @@ async function monsterBattle(
     player_hp: fight.remainingHeroHp, hp_updated_at: nextHpAt,
     level: progress.level, exp: progress.exp
   };
-  const summary = won
-    ? "🏆 승리! " + mob.name + " 처치\n💰 +" + gold +
-      "G · ✨ 경험치 +" + earnedExp +
-      (progress.points ? "\n🎉 레벨업! 스탯 포인트 +" + progress.points : "") +
-      "\n✨ 다음 몬스터: " + nextMob.name + " Lv." + nextMob.level +
-      " (HP " + nextMob.hp + "/" + nextMob.maxHp + ")"
-    : "💀 패배! 플레이어가 쓰러졌어요.\n" +
-      "🔄 몬스터 HP가 " + mob.maxHp + "/" + mob.maxHp + "로 초기화돼요." +
-      "\n💚 회복 또는 휴식 후 재도전할 수 있어요.";
-  return {
-    monster: mob.name,
-    text:
-      "⚔️ 자동 전투 결과 · STAGE " + p.stage + "\n" +
-      "👹 " + mob.name + " Lv." + mob.level +
-      " | HP " + mob.hp + "/" + mob.maxHp + "\n" +
-      "🔁 " + fight.rounds + "턴 전투 완료\n" +
-      "🗡️ 총 가한 피해 " + fight.dealt +
-      " (치명타 " + fight.criticalHits + "회)\n" +
-      "🛡️ 총 받은 피해 " + fight.taken +
-      " (회피 " + fight.dodges + "회)\n" +
-      summary + "\n" + expProgress(progress.level, progress.exp) + "\n" +
-      hpText(after) + "\n" + staminaText(after) +
-      "\n—— 전투 기록 ——\n" +
-      fight.logs.slice(0, 4).join("\n")
-  };
+  const combatLines = fight.logs.length === 4 && fight.rounds > 4
+    ? [
+        ...fight.logs.slice(0, 3),
+        "… 중간 " + (fight.rounds - 4) + "턴 생략 …",
+        fight.logs[3]
+      ]
+    : fight.logs;
+  const resultLines = won
+    ? [
+        "🏆 승리! " + mob.name + " 처치",
+        "💰 +" + gold + "G · ✨ 경험치 +" + earnedExp,
+        ...(progress.points ? ["🎉 레벨업! 스탯 포인트 +" + progress.points] : []),
+        "🗺️ 다음 몬스터: " + nextMob.name + " Lv." + nextMob.level +
+          " (HP " + nextMob.hp + "/" + nextMob.maxHp + ")"
+      ]
+    : [
+        "💀 패배! 플레이어가 쓰러졌어요.",
+        "👹 패배 순간 몬스터 남은 HP " +
+          fight.remainingMonsterHp + "/" + mob.maxHp,
+        "🔄 재도전 시 몬스터 HP는 " + mob.maxHp +
+          "/" + mob.maxHp + "로 초기화됩니다.",
+        "💚 회복 또는 휴식 후 재도전하세요."
+      ];
+  const text = [
+    "⚔️ 자동 전투 결과 · STAGE " + p.stage,
+    "👹 " + mob.name + " Lv." + mob.level +
+      " | HP " + mob.hp + "/" + mob.maxHp,
+    "",
+    "—— 전투 기록 (" + fight.rounds + "턴) ——",
+    ...combatLines,
+    "",
+    "—— 전투 결과 ——",
+    ...resultLines,
+    "🗡️ 총 가한 피해 " + fight.dealt +
+      " | 🛡️ 총 받은 피해 " + fight.taken,
+    "💥 치명타 " + fight.criticalHits +
+      "회 | 💨 회피 " + fight.dodges + "회",
+    expProgress(progress.level, progress.exp),
+    hpText(after),
+    staminaText(after)
+  ].join("\n");
+  return { monster: mob.name, text };
 }
 
 async function handle(command: string, env: Env, botId: string, userKey: string) {
