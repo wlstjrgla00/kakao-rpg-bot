@@ -63,7 +63,7 @@ function monsterCard(monster: MonsterCard) {
 }
 function response(
   text: string,
-  quick = ["사냥", "사냥터", "회복", "내정보", "스탯", "휴식"],
+  quick = ["사냥", "회복", "내정보", "스탯", "장비", "인벤토리", "강화"],
   monster?: MonsterCard
 ) {
   // Present battle summary above the image card and its action buttons.
@@ -280,9 +280,9 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     await db.prepare("INSERT OR IGNORE INTO players(bot_id,bot_user_key) VALUES (?,?)").bind(botId,userKey).run();
     const player = await load(db, botId, userKey);
     const refreshed = player ? await hydrateHp(db, await hydrateStamina(db, player)) : null;
-    return response(`🎮 카카오 RPG에 오신 것을 환영합니다!\n\n${info(refreshed!)}`,
+    return response(`🎮 카카오 RPG에 오신 것을 환영합니다!\n\n${info(refreshed!)}\n${await equipmentInfo(db,refreshed!)}`,
       nextPromotion(refreshed!) && refreshed!.level >= nextPromotion(refreshed!)!.level
-        ? ["전직","사냥","내정보","스탯","출석"] : ["사냥","내정보","스탯","출석"]);
+        ? ["전직","사냥","내정보","장비","인벤토리"] : ["사냥","내정보","장비","인벤토리"]);
   }
   const existing = await load(db, botId, userKey);
   if (!existing) return response("먼저 '게임시작'을 입력해서 캐릭터를 생성해 주세요.",["게임시작"]);
@@ -384,7 +384,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     return jobCard(gearAction[1]==="장착"?"🛡️ 장비 변경":"💰 장비 판매",result,
       [{label:"인벤토리",messageText:"인벤토리"},{label:"장비",messageText:"장비"},{label:"사냥",messageText:"사냥"}]);
   }
-  if (command === "내정보") return response(info(p));
+  if (command === "내정보") return response(info(p)+"\n"+await equipmentInfo(db,p));
   if (command === "사냥터") {
     if (!hasMonsterSchema(p)) {
       return response("⚠️ 사냥터 개편 준비 중입니다. D1 데이터베이스 업데이트(0003)를 적용해 주세요.", ["사냥","내정보"]);
@@ -503,7 +503,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
         "\n회복 또는 휴식 후 다시 도전해 주세요.", ["회복","휴식","내정보","스탯"]
       );
       const outcome = await monsterBattle(db, p, nowMs);
-      return response(outcome.text, ["사냥","사냥터","회복","내정보","스탯","휴식"], outcome.monster);
+      return response(outcome.text, ["사냥","회복","장비","인벤토리","강화","스탯"], outcome.monster);
     }
     // Fallback until migration 0003 is applied: keep the old hunting engine playable.
     const atk = p.strength * 3 + p.level * 2;
