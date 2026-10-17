@@ -40,7 +40,8 @@ export function statText(p:GamePlayer): string {
     hasHpSchema(p) ? hpText(p) : "⚠️ 체력·방어·회피 전투 효과는 DB 0004 적용 뒤 활성화",
     "",
     "레벨업 때마다 스탯 포인트 +1",
-    "버튼을 누르면 해당 능력치에 1포인트를 투자합니다."
+    "버튼을 누르면 1포인트가 투자됩니다.",
+    "💡 한 번에 여러 개: 힘 올리기 24 / 방어 올리기 10 / 민첩 올리기 5 / 지능 올리기 3"
   ].join("\n");
 }
 export async function hydrateHp(db:D1Database, p:GamePlayer):Promise<GamePlayer> {
