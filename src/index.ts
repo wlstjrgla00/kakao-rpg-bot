@@ -346,31 +346,45 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     return response(result.message,result.ok?["스탯","지능 올리기","힘 올리기","내정보"]:["전직","내정보"]);
   }
   if (command === "장비") {
-    const item = await equipped(db,p.id);
-    return jobCard("🛡️ 내 장비",
-      (item ? display(item) + "\n" +
-        (item.upgrade_level>=20 ? "🏆 최대 강화 +20 달성" :
-        "💰 다음 강화 비용: "+cost(item.rarity,item.upgrade_level).toLocaleString()+"G\n"+oddsLine(item.upgrade_level))
-        : "착용한 장비가 없어요.\n사냥으로 획득한 첫 장비는 자동으로 착용됩니다.")+
-      "\n💰 보유 골드: "+p.gold.toLocaleString()+"G",
-      [{label:"강화",messageText:"강화"},{label:"인벤토리",messageText:"인벤토리"},{label:"사냥",messageText:"사냥"}]);
+    return jobCard("🛡️ 착용 장비 3슬롯",
+      await equipmentInfo(db,p)+"\n💰 보유 골드 "+p.gold.toLocaleString()+"G",
+      [{label:"강화",messageText:"강화"},
+       {label:"인벤토리",messageText:"인벤토리"},
+       {label:"사냥",messageText:"사냥"}]);
   }
   if (command === "강화") {
-    const item=await equipped(db,p.id);
-    if(!item)return jobCard("⚒️ 장비 강화","착용 중인 장비가 없어요.\n사냥으로 장비를 획득하세요.",
-      [{label:"인벤토리",messageText:"인벤토리"},{label:"사냥",messageText:"사냥"}]);
-    if(item.upgrade_level>=20)return jobCard("🏆 최대 강화 달성!",display(item)+"\n최대 +20까지만 강화할 수 있어요.",
-      [{label:"장비",messageText:"장비"},{label:"인벤토리",messageText:"인벤토리"}]);
-    return jobCard("⚒️ 장비 강화 +"+item.upgrade_level+" → +"+(item.upgrade_level+1),
-      display(item)+"\n💰 필요 골드 "+cost(item.rarity,item.upgrade_level).toLocaleString()+
-      "G / 보유 "+p.gold.toLocaleString()+"G\n\n"+oddsLine(item.upgrade_level)+
-      "\n\n⚠️ 하락 시 -1강, 파괴 시 장비가 사라집니다. 골드는 결과와 관계없이 소모됩니다.",
-      [{label:"강화 실행",messageText:"강화 실행"},{label:"장비",messageText:"장비"},{label:"인벤토리",messageText:"인벤토리"}]);
+    return jobCard("⚒️ 어떤 장비를 강화할까요?",
+      await equipmentInfo(db,p)+"\n\n강화 최대 +20. 성공·유지·하락·파괴 확률은 강화 화면에서 확인할 수 있어요.",
+      [{label:"⚔️ 무기 강화",messageText:"무기 강화"},
+       {label:"🛡️ 갑옷 강화",messageText:"갑옷 강화"},
+       {label:"💍 반지 강화",messageText:"반지 강화"}]);
   }
-  if (command === "강화 실행") {
-    const result=await enhance(db,p);
-    return jobCard("⚒️ 강화 결과",result,
-      [{label:"다시 강화",messageText:"강화"},{label:"인벤토리",messageText:"인벤토리"},{label:"사냥",messageText:"사냥"}]);
+  const enhanceMatch=command.match(/^(무기|갑옷|반지) 강화(?: (실행))?$/);
+  if(enhanceMatch || command==="강화 실행") {
+    const selected=enhanceMatch?.[1]||"무기";
+    const slot:GearSlot=selected==="갑옷"?"armor":selected==="반지"?"ring":"weapon";
+    const execute=command==="강화 실행"||enhanceMatch?.[2]==="실행";
+    if(execute) {
+      const result=await enhance(db,p,slot);
+      return jobCard("⚒️ "+selected+" 강화 결과",result,
+        [{label:"다시 "+selected+" 강화",messageText:selected+" 강화"},
+         {label:"강화 메뉴",messageText:"강화"},
+         {label:"장비",messageText:"장비"}]);
+    }
+    const item=await equipped(db,p.id,slot);
+    if(!item)return jobCard("⚒️ "+selected+" 강화",
+      SLOT_LABEL[slot]+" 슬롯이 비어 있어요.\n사냥에서 획득하거나 인벤토리에서 장착해 주세요.",
+      [{label:"인벤토리",messageText:"인벤토리"},{label:"강화 메뉴",messageText:"강화"}]);
+    if(item.upgrade_level>=20)return jobCard("🏆 "+selected+" +20 달성!",
+      display(item)+"\n이미 최대 강화에 도달했습니다.",
+      [{label:"강화 메뉴",messageText:"강화"},{label:"장비",messageText:"장비"}]);
+    return jobCard("⚒️ "+selected+" +"+item.upgrade_level+" → +"+(item.upgrade_level+1),
+      display(item)+"\n💰 필요 "+cost(item.rarity,item.upgrade_level).toLocaleString()+
+      "G / 보유 "+p.gold.toLocaleString()+"G\n\n"+oddsLine(item.upgrade_level)+
+      "\n\n⚠️ 하락은 -1강, 파괴 시 해당 장비가 사라집니다. 골드는 결과와 관계없이 소모돼요.",
+      [{label:selected+" 강화 실행",messageText:selected+" 강화 실행"},
+       {label:"강화 메뉴",messageText:"강화"},
+       {label:"장비",messageText:"장비"}]);
   }
   const inventoryMatch=command.match(/^인벤토리(?:\s+(\d+))?$/);
   if(inventoryMatch) {
@@ -390,13 +404,27 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     return jobCard("🎒 인벤토리",content,buttons);
   }
   if (command === "최고 장비 장착") {
-    const best=await db.prepare(
-      "SELECT id FROM equipment WHERE player_id=? ORDER BY attack_bonus DESC,id DESC LIMIT 1"
-    ).bind(p.id).first<{id:number}>();
-    if(!best)return response("🎒 인벤토리에 장비가 없어요. 사냥으로 장비를 획득해 주세요.",["사냥","인벤토리"]);
+    // Pick the largest upgrade compared with the currently occupied SAME slot.
+    // Repeated clicks can equip improvements across all three slots.
+    const worn=await loadout(db,p.id);
+    const candidates=await db.prepare(
+      "SELECT * FROM equipment WHERE player_id=? AND equipped=0 ORDER BY attack_bonus DESC LIMIT 300"
+    ).bind(p.id).all<Equipment>();
+    let best:Equipment|null=null, gain=0;
+    for(const item of candidates.results||[]) {
+      const slot=slotOf(item.item_code);
+      const current=worn.find(x=>slotOf(x.item_code)===slot);
+      const difference=item.attack_bonus-(current?.attack_bonus||0);
+      if(difference>gain){best=item;gain=difference;}
+    }
+    if(!best)return jobCard("🛡️ 최고 장비 장착",
+      "현재 모든 슬롯에 보유한 장비 중 가장 강한 장비를 착용 중이에요.",
+      [{label:"장비",messageText:"장비"},{label:"인벤토리",messageText:"인벤토리"}]);
     const result=await equip(db,p,best.id);
     return jobCard("🛡️ 최고 장비 자동 장착",result,
-      [{label:"장비",messageText:"장비"},{label:"인벤토리",messageText:"인벤토리"},{label:"강화",messageText:"강화"}]);
+      [{label:"다음 장비도 확인",messageText:"최고 장비 장착"},
+       {label:"장비",messageText:"장비"},
+       {label:"인벤토리",messageText:"인벤토리"}]);
   }
   const gearAction=command.match(/^(장착|판매)\s+(\d+)$/);
   if(gearAction) {
@@ -404,7 +432,8 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
     if(!Number.isSafeInteger(id)||id<1)return response("⚠️ 장비 번호가 올바르지 않습니다.",["인벤토리"]);
     const result=gearAction[1]==="장착"?await equip(db,p,id):await sell(db,p,id);
     return jobCard(gearAction[1]==="장착"?"🛡️ 장비 변경":"💰 장비 판매",result,
-      [{label:"인벤토리",messageText:"인벤토리"},{label:"장비",messageText:"장비"},{label:"사냥",messageText:"사냥"}]);
+      [{label:"인벤토리",messageText:"인벤토리"},
+       {label:"장비",messageText:"장비"},{label:"강화",messageText:"강화"}]);
   }
   if (command === "내정보") return response(info(p)+"\n"+await equipmentInfo(db,p));
   if (command === "사냥터") {
