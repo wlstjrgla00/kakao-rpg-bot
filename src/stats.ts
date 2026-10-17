@@ -48,6 +48,7 @@ export async function hydrateHp(db:D1Database, p:GamePlayer):Promise<GamePlayer>
   if(!hasHpSchema(p))return p;
   const now=Date.now();
   const cap=maxHp(p);
+  if (p.player_hp >= cap) return p;
   const originalStamp=p.hp_updated_at||now;
   const elapsed=Math.max(0,now-originalStamp);
   const ticks=Math.floor(elapsed/HEAL_INTERVAL_MS);
