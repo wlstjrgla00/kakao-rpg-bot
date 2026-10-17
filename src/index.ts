@@ -295,7 +295,7 @@ async function handle(command: string, env: Env, botId: string, userKey: string)
         (progress.points ? "\n🎉 레벨업! Lv." + progress.level +
           " (+" + progress.points + " 스탯포인트)" : "")
       : "💀 사냥 실패!\n👹 몬스터에게 패배했습니다.";
-    return response(battle + "\n" + staminaText(after), ["사냥","사냥터","내정보","출석","휴식"]);
+    return response(battle + "\n" + expProgress(progress.level, progress.exp) + "\n" + staminaText(after), ["사냥","사냥터","내정보","출석","휴식"]);
   }
   if (command === "랭킹") {
     const result = await db.prepare("SELECT nickname,level,stage FROM players WHERE bot_id=? ORDER BY level DESC,exp DESC,stage DESC LIMIT 10").bind(botId).all<{nickname:string,level:number,stage:number}>();
